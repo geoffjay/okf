@@ -20,6 +20,7 @@
 //!   index        [bundle]   (Re)generate every index.md in a bundle (--json).
 //!   parse        <file>     Parse one concept document and print its structure (--json).
 //!   studio       [bundle]   Open the interactive terminal studio (--today, --tab, --no-watch).
+//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out).
 //! ```
 
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -167,6 +168,9 @@ pub enum Commands {
     /// Open the interactive terminal studio for a bundle
     #[cfg(feature = "studio")]
     Studio(StudioArgs),
+    /// Generate a static HTML site for a bundle (maud + vendored mermaid)
+    #[cfg(feature = "site")]
+    Site(SiteArgs),
 }
 
 #[derive(Args, Debug)]
@@ -695,6 +699,22 @@ pub struct StudioArgs {
     pub author: Option<String>,
 }
 
+#[cfg(feature = "site")]
+#[derive(Args, Debug)]
+pub struct SiteArgs {
+    /// Bundle directory to generate from (defaults to current directory)
+    #[arg(default_value = ".")]
+    pub bundle: PathBuf,
+
+    /// Evaluate staleness against this date instead of the system clock
+    #[arg(long, value_parser = parse_date)]
+    pub today: Option<Date>,
+
+    /// Output directory (defaults to `<bundle>/site`)
+    #[arg(long, value_name = "DIR")]
+    pub out: Option<PathBuf>,
+}
+
 /// Runs the `okf` CLI on `args` (the program name already stripped) and
 /// returns the process exit code.
 ///
@@ -735,6 +755,8 @@ pub fn run(args: &[String]) -> ExitCode {
         Commands::Parse(ref a) => cmd_parse(a),
         #[cfg(feature = "studio")]
         Commands::Studio(ref a) => cmd_studio(a),
+        #[cfg(feature = "site")]
+        Commands::Site(ref a) => cmd_site(a),
     };
 
     match result {
@@ -781,6 +803,35 @@ fn cmd_studio(args: &StudioArgs) -> Result<ExitCode, CliError> {
         author: args.author.clone(),
     })
     .map_err(|e| CliError::data(format!("studio failed: {e}")))
+}
+
+/// Generates the static site. The bundle is loaded once *before* okf-web
+/// runs so a missing or unreadable bundle fails early with the same
+/// well-coded exit as every other subcommand. Site never takes `--json`:
+/// like studio, it *is* the presentation.
+#[cfg(feature = "site")]
+fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
+    let _ = load(&args.bundle)?;
+    let out_dir = args.out.clone().unwrap_or_else(|| args.bundle.join("site"));
+    let summary = okf_web::generate(okf_web::SiteOptions {
+        root: args.bundle.clone(),
+        out_dir: out_dir.clone(),
+        today: args.today,
+    })
+    .map_err(|e| CliError::data(format!("site failed: {e}")))?;
+
+    println!(
+        "generated {} page(s) into {}",
+        summary.pages,
+        out_dir.display()
+    );
+    if summary.mermaid_pages > 0 {
+        println!(
+            "  {} diagram page(s); mermaid.js vendored under assets/",
+            summary.mermaid_pages
+        );
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 struct LoadedTarget {

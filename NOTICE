@@ -24,5 +24,19 @@ Python `reference_agent` package: `bundle/document.py`, `bundle/paths.py`,
 project is implemented here. These files have been rewritten in Rust and
 modified from their original form.
 
+------------------------------------------------------------------------------
+
+The `okf-web` crate vendors the mermaid.js diagram renderer as a static
+asset (`crates/okf-web/assets/vendor/mermaid.min.js`), written into generated
+sites so diagrams render client-side. It is not a build or runtime code
+dependency of any okf crate. mermaid.js is distributed under the MIT License:
+
+    mermaid
+    Copyright (c) 2014 - 2022 Knut Sveidqvist
+    https://github.com/mermaid-js/mermaid
+
+The full MIT license text is retained alongside the asset in
+`crates/okf-web/assets/vendor/mermaid-LICENSE.txt`.
+
 OKF and Google Cloud are trademarks of Google LLC. This crate is an independent
 implementation and is not affiliated with, endorsed by, or sponsored by Google.

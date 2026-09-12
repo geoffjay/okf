@@ -1,0 +1,35 @@
+[package]
+name = "okf-web"
+description = "okf web: a pure-Rust static site generator for Open Knowledge Format (OKF) bundles — maud templates, pulldown-cmark rendering, and vendored mermaid.js for diagram pages, with no WASM and no server."
+documentation = "https://docs.rs/okf-web"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+# maud (compile-time html! templates, zero runtime) and pulldown-cmark
+# (event-stream markdown rendering) are the only external dependencies beyond
+# okf-core/okf-validator; the workspace's minimal-dependency ethos rules out
+# anything heavier. See docs/knowledgebase/architecture/okf_web_static_site.md.
+[dependencies]
+okf-core.workspace = true
+okf-validator.workspace = true
+maud = "0.27.0"
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
+
+# Language parsers for computation-contract syntax badges, forwarded to
+# okf-validator the same way okf-studio forwards them.
+[features]
+default = ["python", "javascript", "rust", "sql"]
+python = ["okf-validator/python"]
+javascript = ["okf-validator/javascript"]
+rust = ["okf-validator/rust"]
+sql = ["okf-validator/sql"]

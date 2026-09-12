@@ -2,7 +2,7 @@
 type: Decision
 title: okf-site vs okf-web naming and dependency choice for the site generator
 description: Decision record on naming the static-site crate okf-web vs okf-site, depending on okf-core instead of okf-studio, and rejecting WASM frameworks in favor of a build-time pipeline.
-status: draft
+status: stable
 generated:
   by: human:w4g1
   at: "2026-09-11T00:00:00Z"

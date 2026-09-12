@@ -34,6 +34,7 @@ A **pure-Rust** implementation, library and CLI toolkit for the [Open Knowledge 
   - [5. Inspect trust and visualize the graph](#5-inspect-trust-and-visualize-the-graph)
   - [6. Explore with OKF Studio](#6-explore-with-okf-studio)
 - [Interactive studio: `okf studio`](#interactive-studio-okf-studio)
+- [Static site: `okf site`](#static-site-okf-site)
 - [Anatomy of an OKF bundle](#anatomy-of-an-okf-bundle)
   - [Directory structure](#directory-structure)
   - [Concept document example](#concept-document-example)
@@ -164,6 +165,41 @@ Unlike one-off commands that run once and exit, the studio stays open and automa
 okf studio [bundle]
 ```
 
+---
+
+## Static site: okf site
+
+`okf site` generates a deployable static website from a bundle — the same
+engine as `okf studio`, but rendered to a directory of HTML instead of a live
+terminal. Where `okf graph --format mermaid` prints diagram source and the
+studio shows fenced `mermaid` blocks as boxed code, the site renders those
+diagrams for real, in the browser.
+
+```sh
+okf site [bundle]            # writes <bundle>/site by default
+okf site . --out public      # choose the output directory
+okf site . --today 2026-07-01  # pin staleness for reproducible builds
+```
+
+- **Pure build-time generation.** A Rust binary in, a directory of HTML out —
+  no server, no WASM, no JavaScript framework. Deploys to GitHub Pages or any
+  static host; relative URLs mirror the bundle layout, so it works under any
+  base path.
+- **Rendered diagrams.** Fenced ` ```mermaid ` blocks render client-side via a
+  vendored [mermaid.js](https://mermaid.js.org/) (shipped only when a page has
+  a diagram). Diagram source is escaped into a `<pre>` fallback that survives
+  render failures and no-JS.
+- **Parity panels.** Every concept page shows what the studio inspector does:
+  trust/status/staleness badges, backlinks, sources with footnote→source
+  attribution, a headings table of contents, and validator/lint findings.
+- **Dashboard and graph.** A trust dashboard (tier distribution, attention
+  queue, actor stats — the numbers agree with `okf info` / `okf trust`) plus a
+  bundle-wide mermaid cross-link graph.
+
+`okf site` is on by default; opt out with `--no-default-features` (see
+[Using as a Rust library](#using-as-a-rust-library)). Built on the
+[`okf-web`](https://crates.io/crates/okf-web) crate, whose `generate` entry
+point can be called directly.
 ---
 
 ## Anatomy of an OKF bundle
@@ -561,10 +597,10 @@ Add `okf` or `okf-core` to your `Cargo.toml`:
 cargo add okf
 ```
 
-The `okf` crate's features let you take only what you need. `validator` and
-`studio` are on by default, as are the four language parsers behind the
-validator's syntax checks: `python`, `javascript`, `rust`, and `sql`. Each
-parser can be dropped independently. This matters under a strict dependency
+The `okf` crate's features let you take only what you need. `validator`,
+`studio`, and `site` are on by default, as are the four language parsers
+behind the validator's syntax checks: `python`, `javascript`, `rust`, and
+`sql`. Each parser can be dropped independently. This matters under a strict dependency
 or licence policy: the Python parser (`rustpython-parser`) depends on the
 LGPL-3.0-only `malachite` crates, which an allow-list policy such as
 `cargo deny` will reject. Conformance validation and linting need none of
@@ -679,6 +715,7 @@ This repository is structured as a multi-crate Rust workspace:
 | [`okf-core`](https://crates.io/crates/okf-core) | Pure-Rust OKF engine (YAML subset parser, AST, link graphs, diff, fix engine). | [![docs.rs](https://img.shields.io/docsrs/okf-core)](https://docs.rs/okf-core) |
 | [`okf-validator`](https://crates.io/crates/okf-validator) | Conformance validator, multi-language syntax checker, and 13 opinionated linting rules. | [![docs.rs](https://img.shields.io/docsrs/okf-validator)](https://docs.rs/okf-validator) |
 | [`okf-studio`](https://crates.io/crates/okf-studio) | The `okf studio` interactive terminal UI: explorer, graph, mission control, computations playground, and live refactoring. | [![docs.rs](https://img.shields.io/docsrs/okf-studio)](https://docs.rs/okf-studio) |
+| [`okf-web`](https://crates.io/crates/okf-web) | The `okf site` static site generator: maud templates, pulldown-cmark rendering, and vendored mermaid.js diagrams — a deployable HTML view of a bundle. | [![docs.rs](https://img.shields.io/docsrs/okf-web)](https://docs.rs/okf-web) |
 | [`cargo-okf`](https://crates.io/crates/cargo-okf) | Cargo plugin wrapper allowing `cargo okf <cmd>`. | [![docs.rs](https://img.shields.io/docsrs/cargo-okf)](https://docs.rs/cargo-okf) |
 
 ---

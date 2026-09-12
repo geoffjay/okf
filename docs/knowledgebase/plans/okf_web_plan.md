@@ -2,7 +2,7 @@
 type: Plan
 title: okf-web as a maud + pulldown-cmark static site generator
 description: "Plan for okf-web, the static site generator crate: pure-Rust build pipeline over okf-core and okf-validator, maud templates, pulldown-cmark rendering, mermaid.js vendored as an asset, and no WASM framework."
-status: draft
+status: stable
 generated:
   by: human:w4g1
   at: "2026-09-11T00:00:00Z"
@@ -110,20 +110,27 @@ hold: there is no production-grade pure-Rust mermaid renderer, and executing
 mermaid.js at build time would put a JS runtime in the build chain — a worse
 violation than vendoring.
 
-- Vendor mermaid's ESM `dist/` tree into the generated site's `assets/`
-  directory as a static asset (like the repo's `assets/okf_studio.png`), not
-  a crate dependency. The ~11 KB ESM entry imports ~1 MB of chunks; vendor
-  the whole directory.
-- Emit `<script type="module">` only on pages flagged `has_mermaid`, so
-  clean bundles never download it.
+- Vendor mermaid as a static asset in the generated site's `assets/`
+  directory (like the repo's `assets/okf_studio.png`), not a crate
+  dependency. **Implemented as the single-file `dist/mermaid.min.js`** (a
+  self-contained ~5 MB IIFE), embedded into the `okf-web` binary with
+  `include_bytes!` and written to `assets/mermaid.min.js`. This supersedes
+  the original "vendor the ESM `dist/` tree" plan: the real mermaid 12 ESM
+  tree is ~63 MB across hundreds of chunk files, and ESM module scripts are
+  blocked by CORS over `file://`, so the site would not open without a
+  server. A classic `<script src>` is smaller, simpler, and opens directly
+  from disk.
+- Emit the mermaid `<script>` only on pages flagged `has_mermaid`, and write
+  the asset only when some page carries a diagram, so clean bundles never
+  download or ship it.
 - Initialize with `securityLevel: 'strict'` (the default), which sanitizes
-  diagram source.
-- Escape the diagram source into the `<pre>` so the raw text survives
-  render failures and noscript.
+  diagram source, plus `mermaid.run({ suppressErrors: true })` so a malformed
+  diagram leaves its escaped source visible instead of throwing.
+- Escape the diagram source into the `<pre class="mermaid">` so the raw text
+  survives render failures and noscript.
 - The bundle-wide graph page reuses the `okf graph --format mermaid` flowchart
   emitter logic (flowchart LR, `mermaid_label` escaping, phantom nodes for
-  broken links) rendered by the same vendored mermaid. Mermaid degrades past
-  a few hundred nodes — cap or subgraph per directory in v1.
+  broken links) rendered by the same vendored mermaid.
 
 ### Security posture
 

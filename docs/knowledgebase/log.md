@@ -2,9 +2,6 @@
 
 ## 2026-09-11
 * **Creation**: Initialized OKF bundle.
-
-## 2026-09-11
-* Added [okf-web static site generator plan](plans/okf_web_plan.md) and its [architecture decision record](architecture/okf_web_static_site.md): maud + pulldown-cmark build-time pipeline, mermaid.js vendored as an asset, `okf site` subcommand behind a feature flag.
-
-## 2026-09-11
 * **Scaffold**: Augmented the okf knowledge base at `docs/knowledgebase/` using the `okf-ify` skill. Added the agent policy section to `index.md` and the concept directories `concepts`, `decisions`, `patterns`, `references` (alongside the existing `architecture` and `plans`), plus [references/okf-spec.md](references/okf-spec.md). Wired Claude Code (`.claude/hooks/`), opencode (`.opencode/opencode.jsonc`) and oh-my-pi (`.omp/extensions/kb-hooks.ts`) to consult and update the KB. OKF v0.2 conformant.
+* Added [okf-web static site generator plan](plans/okf_web_plan.md) and its [architecture decision record](architecture/okf_web_static_site.md): maud + pulldown-cmark build-time pipeline, mermaid.js vendored as an asset, `okf site` subcommand behind a feature flag.
+* **Implementation**: Built the `okf-web` crate and wired `okf site` (default-on feature). Pure-Rust build-time generator over okf-core + okf-validator: maud templates, pulldown-cmark rendering, per-concept pages with trust/status/staleness badges, backlinks, footnote→source panels, headings TOC, a trust dashboard, and a bundle-wide mermaid graph. mermaid.js (12.0.0, MIT) vendored as a static asset and loaded client-side only on diagram pages. Verified end-to-end in a browser (diagram renders, no console errors, links navigate); dashboard numbers match `okf info`/`okf trust`. Bumped the workspace to 0.3.0. Replaced the reserved `okf-web` placeholder. Deviation from the plan's mermaid section: vendored the single-file `mermaid.min.js` loaded as a classic script rather than the ESM `dist/` tree — the real ESM tree is ~63 MB and ESM module scripts fail over `file://`, so a self-contained classic script is both smaller and openable without a server.
