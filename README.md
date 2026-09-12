@@ -185,6 +185,10 @@ okf site . --today 2026-07-01  # pin staleness for reproducible builds
   no server, no WASM, no JavaScript framework. Deploys to GitHub Pages or any
   static host; relative URLs mirror the bundle layout, so it works under any
   base path.
+- **Tailwind-styled, zero external CSS.** Pages inline one stylesheet compiled
+  from [Tailwind CSS v4](https://tailwindcss.com); the site loads no external
+  stylesheet (mermaid.js is the only external asset, and only when a page has a
+  diagram).
 - **Rendered diagrams.** Fenced ` ```mermaid ` blocks render client-side via a
   vendored [mermaid.js](https://mermaid.js.org/) (shipped only when a page has
   a diagram). Diagram source is escaped into a `<pre>` fallback that survives
@@ -715,7 +719,7 @@ This repository is structured as a multi-crate Rust workspace:
 | [`okf-core`](https://crates.io/crates/okf-core) | Pure-Rust OKF engine (YAML subset parser, AST, link graphs, diff, fix engine). | [![docs.rs](https://img.shields.io/docsrs/okf-core)](https://docs.rs/okf-core) |
 | [`okf-validator`](https://crates.io/crates/okf-validator) | Conformance validator, multi-language syntax checker, and 13 opinionated linting rules. | [![docs.rs](https://img.shields.io/docsrs/okf-validator)](https://docs.rs/okf-validator) |
 | [`okf-studio`](https://crates.io/crates/okf-studio) | The `okf studio` interactive terminal UI: explorer, graph, mission control, computations playground, and live refactoring. | [![docs.rs](https://img.shields.io/docsrs/okf-studio)](https://docs.rs/okf-studio) |
-| [`okf-web`](https://crates.io/crates/okf-web) | The `okf site` static site generator: maud templates, pulldown-cmark rendering, and vendored mermaid.js diagrams — a deployable HTML view of a bundle. | [![docs.rs](https://img.shields.io/docsrs/okf-web)](https://docs.rs/okf-web) |
+| [`okf-web`](https://crates.io/crates/okf-web) | The `okf site` static site generator: maud templates, pulldown-cmark rendering, Tailwind v4 styling, and vendored mermaid.js diagrams — a deployable HTML view of a bundle. | [![docs.rs](https://img.shields.io/docsrs/okf-web)](https://docs.rs/okf-web) |
 | [`cargo-okf`](https://crates.io/crates/cargo-okf) | Cargo plugin wrapper allowing `cargo okf <cmd>`. | [![docs.rs](https://img.shields.io/docsrs/cargo-okf)](https://docs.rs/cargo-okf) |
 
 ---

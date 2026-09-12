@@ -22,6 +22,9 @@
 //! - A nav tree mirroring the bundle layout, a dashboard
 //!   (`__okf/dashboard.html`), and a bundle-wide mermaid graph page
 //!   (`__okf/graph.html`).
+//! - A single inline stylesheet compiled from Tailwind CSS v4 (source in
+//!   `assets/tailwind.css`, vendored as `assets/site.css`), embedded in every
+//!   page so the site fetches no external CSS.
 //! - `assets/mermaid.min.js`, a vendored mermaid build, written only when some
 //!   page carries a diagram, so clean bundles never download it.
 //!

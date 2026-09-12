@@ -76,62 +76,11 @@ fn concept_link(bundle: &Bundle, prefix: &str, id: &ConceptId) -> Markup {
     }
 }
 
-/// The site-wide CSS. Inline in each page: the site must deploy as a flat
-/// directory tree with zero external fetches beyond mermaid.
-const SITE_CSS: &str = "\
-:root { color-scheme: light dark; }\
-* { box-sizing: border-box; }\
-body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }\
-body { background: #fafafa; color: #1a1a1a; }\
-@media (prefers-color-scheme: dark) { body { background: #14161a; color: #e6e6e6; } }\
-a { color: #0b62c4; }\
-@media (prefers-color-scheme: dark) { a { color: #6db3f2; } }\
-.layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }\
-nav.tree { border-right: 1px solid #d8d8d8; padding: 1rem; position: sticky; top: 0; overflow-y: auto; max-height: 100vh; }\
-@media (prefers-color-scheme: dark) { nav.tree { border-color: #2a2d33; } }\
-nav.tree .site-title { font-weight: 700; margin-bottom: .5rem; }\
-nav.tree .special a, nav.tree li a { display: block; padding: 1px 0; text-decoration: none; }\
-nav.tree li { list-style: none; }\
-nav.tree ul { padding-left: 1rem; margin: 0; }\
-nav.tree > ul { padding-left: 0; }\
-main { padding: 2rem 3rem; max-width: 60rem; min-width: 0; }\
-h1, h2, h3 { line-height: 1.25; }\
-.panel { border: 1px solid #d8d8d8; border-radius: 8px; padding: .75rem 1rem; margin: 1rem 0; background: rgba(127,127,127,.04); }\
-@media (prefers-color-scheme: dark) { .panel { border-color: #2a2d33; } }\
-.panel h3 { margin: .25rem 0 .5rem; font-size: .95em; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }\
-.meta-grid { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0; }\
-.meta-grid dt { font-weight: 600; opacity: .8; }\
-.meta-grid dd { margin: 0; }\
-.badge { display: inline-block; padding: 0 .5em; border-radius: 1em; font-size: .85em; border: 1px solid currentColor; white-space: nowrap; }\
-.tier-unverified { color: #a3670d; }\
-.tier-machine { color: #6b4faf; }\
-.tier-human { color: #0c7a43; }\
-.status-draft { color: #a3670d; }\
-.status-stable { color: #0c7a43; }\
-.status-deprecated { color: #b03030; }\
-.status-other { color: #666; }\
-.sev-info { color: #666; }\
-.sev-warning { color: #a3670d; }\
-.sev-error { color: #b03030; }\
-.badge.stale { color: #b03030; }\
-.badge.fresh { color: #0c7a43; }\
-.broken-link { color: #b03030; text-decoration: line-through; }\
-pre.mermaid { background: rgba(127,127,127,.06); border-radius: 8px; padding: 1rem; overflow-x: auto; }\
-pre.mermaid svg { max-width: 100%; height: auto; }\
-pre.mermaid[data-processed] { background: none; padding: 0; }\
-code { background: rgba(127,127,127,.12); border-radius: 3px; padding: .1em .3em; }\
-pre code { background: none; padding: 0; }\
-pre { overflow-x: auto; }\
-article img { max-width: 100%; }\
-.toc-columns { columns: 2; }\
-@media (max-width: 50rem) { .toc-columns { columns: 1; } }\
-table { border-collapse: collapse; }\
-th, td { border: 1px solid #d8d8d8; padding: .25rem .6rem; }\
-@media (prefers-color-scheme: dark) { th, td { border-color: #2a2d33; } }\
-.pagerow { display: flex; gap: 2rem; flex-wrap: wrap; }\
-.pagerow section { flex: 1 1 14rem; min-width: 0; }\
-.num { font-variant-numeric: tabular-nums; }\
-";
+/// The site-wide CSS: Tailwind v4 output compiled from `assets/tailwind.css`
+/// by `cargo xtask tailwind` and vendored as `assets/site.css`. Inlined into
+/// each page so the site deploys as a flat directory tree with zero external
+/// fetches beyond mermaid; regenerate it after editing the source stylesheet.
+const SITE_CSS: &str = include_str!("../assets/site.css");
 
 // (The mermaid bootstrap lives in `mermaid_boot`, emitted per page with a
 // depth-correct asset path; no module-level constant.)
@@ -176,7 +125,10 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
-                style { (SITE_CSS) }
+                // PreEscaped: SITE_CSS is trusted compile-time content; maud's
+                // default escaping would turn `>` combinators and quoted
+                // font-family names into `&gt;`/`&quot;` and break the rules.
+                style { (PreEscaped(SITE_CSS)) }
             }
             body {
                 div class="layout" {

@@ -24,10 +24,18 @@ What it emits:
 - Frontmatter panels with trust/status/staleness badges, backlinks, sources
   with OKF footnote→source attribution, headings TOC, and validator/lint
   findings — everything the studio Explorer inspector shows.
+- A single inline stylesheet compiled from Tailwind CSS v4, so pages fetch no
+  external CSS (mermaid is the only external asset, and only on diagram pages).
 
 Security: no raw HTML passthrough from markdown bodies (pulldown-cmark's
 `unsafe` stays off), maud escapes every frontmatter interpolation, and
 external source URLs carry `rel="noopener noreferrer"`.
+
+Regenerating the CSS: styling lives in `assets/tailwind.css`, the only
+hand-authored stylesheet; run `cargo xtask tailwind` to recompile the vendored
+`assets/site.css` with the Tailwind v4 standalone CLI (fetched on first use, or
+set `$TAILWIND_BIN` to a local binary). `okf site` itself needs no toolchain —
+it embeds the committed `site.css` at build time.
 
 This crate is a library with a single entry point (`okf_web::generate`); the
 `okf` binary's `site` subcommand is a thin wrapper around it. See

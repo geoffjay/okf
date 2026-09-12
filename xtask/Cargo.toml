@@ -1,0 +1,10 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Workspace developer tasks (not published)."
+
+# Dependency-free by design: the only task shells out to `curl` and the
+# Tailwind v4 standalone CLI, so nothing here needs a crate.
+[dependencies]

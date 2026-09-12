@@ -1,0 +1,313 @@
+/*
+ * Tailwind v4 source for the okf-web static site — the ONLY hand-authored
+ * stylesheet. `cargo xtask tailwind` compiles it with the Tailwind v4
+ * standalone CLI (no Node) into `site.css`, which is committed and
+ * `include_str!`'d by `render.rs`; the generator itself needs no toolchain.
+ *
+ * `source(none)` turns off Tailwind's file scanning: every class the templates
+ * use is defined here via `@apply`, so the output is deterministic and carries
+ * no utilities beyond the ones these components reference. Add styling here and
+ * regenerate — never hand-edit `site.css`, and never rely on a utility class in
+ * a template that this file does not `@apply`.
+ */
+@import "tailwindcss" source(none);
+
+/*
+ * Palette and surface tokens as plain custom properties (not `@theme`, which
+ * tree-shakes unused values under `source(none)`). Badge hues mirror the
+ * studio's theme roles and are identical in light and dark; surfaces and edges
+ * flip with the color scheme below.
+ */
+:root {
+  color-scheme: light dark;
+
+  --surface: #fafafa;
+  --ink: #1a1a1a;
+  --edge: #d8d8d8;
+  --link: #0b62c4;
+
+  --panel-bg: rgba(127, 127, 127, 0.04);
+  --code-bg: rgba(127, 127, 127, 0.12);
+  --mermaid-bg: rgba(127, 127, 127, 0.06);
+
+  --tier-unverified: #a3670d;
+  --tier-machine: #6b4faf;
+  --tier-human: #0c7a43;
+  --status-draft: #a3670d;
+  --status-stable: #0c7a43;
+  --status-deprecated: #b03030;
+  --status-other: #666666;
+  --sev-info: #666666;
+  --sev-warning: #a3670d;
+  --sev-error: #b03030;
+  --danger: #b03030;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #14161a;
+    --ink: #e6e6e6;
+    --edge: #2a2d33;
+    --link: #6db3f2;
+  }
+}
+
+@layer base {
+  body {
+    @apply m-0;
+    font: 16px/1.6 system-ui, sans-serif;
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  a {
+    color: var(--link);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.25;
+  }
+
+  code {
+    background: var(--code-bg);
+    border-radius: 3px;
+    padding: 0.1em 0.3em;
+  }
+
+  pre {
+    @apply overflow-x-auto;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border: 1px solid var(--edge);
+    padding: 0.25rem 0.6rem;
+  }
+
+  /*
+   * Markdown prose: restore the element defaults Preflight strips, so concept
+   * bodies keep readable headings, lists, quotes, and rules.
+   */
+  article h1 {
+    @apply text-2xl font-bold;
+    margin: 1.2rem 0 0.6rem;
+  }
+  article h2 {
+    @apply text-xl font-bold;
+    margin: 1.1rem 0 0.5rem;
+  }
+  article h3 {
+    @apply text-lg font-semibold;
+    margin: 1rem 0 0.5rem;
+  }
+  article h4,
+  article h5,
+  article h6 {
+    @apply font-semibold;
+    margin: 1rem 0 0.5rem;
+  }
+  article p {
+    margin: 0.75rem 0;
+  }
+  article ul {
+    @apply list-disc;
+    margin: 0.75rem 0;
+    padding-left: 1.5rem;
+  }
+  article ol {
+    @apply list-decimal;
+    margin: 0.75rem 0;
+    padding-left: 1.5rem;
+  }
+  article li {
+    margin: 0.25rem 0;
+  }
+  article a {
+    text-decoration: underline;
+  }
+  article blockquote {
+    margin: 1rem 0;
+    padding: 0.25rem 0 0.25rem 1rem;
+    border-left: 3px solid var(--edge);
+    opacity: 0.85;
+  }
+  article hr {
+    border: 0;
+    border-top: 1px solid var(--edge);
+    margin: 1.5rem 0;
+  }
+  article img {
+    max-width: 100%;
+  }
+}
+
+@layer components {
+  .layout {
+    @apply grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+
+  .tree {
+    @apply sticky top-0 overflow-y-auto p-4;
+    max-height: 100vh;
+    border-right: 1px solid var(--edge);
+
+    .site-title {
+      @apply mb-2 font-bold;
+    }
+    .special a,
+    li a {
+      @apply block no-underline;
+      padding: 1px 0;
+    }
+    li {
+      @apply list-none;
+    }
+    ul {
+      @apply m-0 pl-4;
+    }
+    & > ul {
+      @apply pl-0;
+    }
+  }
+
+  main {
+    @apply min-w-0;
+    padding: 2rem 3rem;
+    max-width: 60rem;
+  }
+  main > h1 {
+    @apply text-3xl font-bold;
+    margin: 0 0 0.5rem;
+  }
+
+  .panel {
+    @apply rounded-lg;
+    border: 1px solid var(--edge);
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    background: var(--panel-bg);
+
+    h3 {
+      @apply uppercase;
+      margin: 0.25rem 0 0.5rem;
+      font-size: 0.95em;
+      letter-spacing: 0.04em;
+      opacity: 0.75;
+    }
+  }
+
+  .meta-grid {
+    @apply m-0 grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.15rem 1rem;
+
+    dt {
+      @apply font-semibold;
+      opacity: 0.8;
+    }
+    dd {
+      @apply m-0;
+    }
+  }
+
+  .badge {
+    @apply inline-block whitespace-nowrap;
+    padding: 0 0.5em;
+    border-radius: 1em;
+    font-size: 0.85em;
+    border: 1px solid currentColor;
+  }
+  .badge.stale {
+    color: var(--danger);
+  }
+  .badge.fresh {
+    color: var(--status-stable);
+  }
+
+  .tier-unverified {
+    color: var(--tier-unverified);
+  }
+  .tier-machine {
+    color: var(--tier-machine);
+  }
+  .tier-human {
+    color: var(--tier-human);
+  }
+  .status-draft {
+    color: var(--status-draft);
+  }
+  .status-stable {
+    color: var(--status-stable);
+  }
+  .status-deprecated {
+    color: var(--status-deprecated);
+  }
+  .status-other {
+    color: var(--status-other);
+  }
+  .sev-info {
+    color: var(--sev-info);
+  }
+  .sev-warning {
+    color: var(--sev-warning);
+  }
+  .sev-error {
+    color: var(--sev-error);
+  }
+
+  .broken-link {
+    color: var(--danger);
+    text-decoration: line-through;
+  }
+
+  .toc-columns {
+    columns: 2;
+  }
+  @media (max-width: 50rem) {
+    .toc-columns {
+      columns: 1;
+    }
+  }
+
+  .pagerow {
+    @apply flex flex-wrap;
+    gap: 2rem;
+
+    section {
+      @apply min-w-0;
+      flex: 1 1 14rem;
+    }
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  pre.mermaid {
+    @apply overflow-x-auto rounded-lg;
+    background: var(--mermaid-bg);
+    padding: 1rem;
+
+    svg {
+      max-width: 100%;
+      height: auto;
+    }
+  }
+  pre.mermaid[data-processed] {
+    background: none;
+    padding: 0;
+  }
+}
