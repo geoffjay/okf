@@ -2,7 +2,7 @@
 okf_version: "0.2"
 ---
 
-# okf knowledge base
+# OKF Knowledge Base
 
 This is the working knowledge base for the okf project, conforming to the
 [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).

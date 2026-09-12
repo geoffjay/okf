@@ -153,15 +153,70 @@
 }
 
 @layer components {
+  .site-header {
+    @apply fixed inset-x-0 top-0 z-50 flex items-center gap-3 px-4 py-2;
+    height: 3rem;
+    border-bottom: 1px solid var(--edge);
+    background: var(--surface);
+  }
+
+  /* Visually-hidden checkbox that drives the nav collapse; the label is
+     the visible hamburger. sr-only keeps it keyboard-accessible. */
+  .nav-toggle-input {
+    @apply sr-only;
+  }
+
+  .site-header .menu-btn {
+    @apply flex shrink-0 cursor-pointer items-center justify-center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .site-header .menu-btn:hover {
+    background: var(--panel-bg);
+  }
+
+  .site-header .site-name {
+    @apply truncate font-bold;
+  }
+
+  .site-header .site-search {
+    @apply ml-auto;
+  }
+  .site-header .site-search input {
+    @apply w-48 rounded-md px-2 py-1;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    color: var(--ink);
+  }
+  .site-header .site-search input::placeholder {
+    opacity: 0.6;
+  }
+  .site-header .site-search input:focus {
+    @apply w-64;
+    border-color: var(--link);
+    outline: none;
+  }
+
+  /* CSS-only collapse: when the (visually hidden) toggle checkbox is
+     checked, hide the tree and reclaim its grid column. */
+  body:has(.nav-toggle-input:checked) .tree {
+    @apply hidden;
+  }
+  body:has(.nav-toggle-input:checked) .layout {
+    grid-template-columns: 1fr;
+  }
+
   .layout {
-    @apply grid;
+    @apply grid pt-12;
     grid-template-columns: 260px 1fr;
-    min-height: 100vh;
+    min-height: calc(100vh - 3rem);
   }
 
   .tree {
-    @apply sticky top-0 overflow-y-auto p-4;
-    max-height: 100vh;
+    @apply sticky top-12 overflow-y-auto p-4;
+    max-height: calc(100vh - 3rem);
     border-right: 1px solid var(--edge);
 
     .site-title {

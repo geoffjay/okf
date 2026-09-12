@@ -131,8 +131,25 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                 style { (PreEscaped(SITE_CSS)) }
             }
             body {
+                header class="site-header" {
+                    // CSS-only collapse: a visually-hidden checkbox toggles
+                    // the nav via `body:has(:checked)` selectors in the
+                    // stylesheet — no script tags on mermaid-free pages,
+                    // preserving the generator's no-scripts security posture.
+                    // The `<label>` is the hamburger button.
+                    input id="nav-toggle" class="nav-toggle-input" type="checkbox" {}
+                    label class="menu-btn" for="nav-toggle" title="Toggle navigation" {
+                        // Inline SVG: hamburger glyph whose stroke inherits
+                        // currentColor, so light/dark schemes both work.
+                        (PreEscaped(MENU_ICON))
+                    }
+                    span class="site-name" { "okf site" }
+                    div class="site-search" {
+                        input type="search" name="q" placeholder="Search" aria-label="Search" {}
+                    }
+                }
                 div class="layout" {
-                    nav class="tree" aria-label="bundle contents" {
+                    nav id="site-nav" class="tree" aria-label="bundle contents" {
                         (nav_tree(bundle, &prefix))
                     }
                     main {
@@ -159,6 +176,13 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
         }
     }
 }
+
+/// The hamburger icon: a plain inline SVG whose stroke inherits the button's
+/// current color, so light/dark schemes both work with no custom CSS.
+const MENU_ICON: &str = "\
+<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" width=\"20\" height=\"20\" \
+aria-hidden=\"true\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg>";
 
 /// The mermaid bootstrap, a classic inline script placed at the end of
 /// `<body>` so `.mermaid` nodes already exist. Strict security level (the
