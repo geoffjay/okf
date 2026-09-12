@@ -96,63 +96,102 @@
   }
 
   /*
-   * Markdown prose: restore the element defaults Preflight strips, so concept
-   * bodies keep readable headings, lists, quotes, and rules.
+   * Markdown prose base: body copy slightly smaller, muted, and relaxed
+   * (element-level overrides come from the `md-*` component classes).
    */
-  article h1 {
-    @apply text-2xl font-bold;
-    margin: 1.2rem 0 0.6rem;
-  }
-  article h2 {
-    @apply text-xl font-bold;
-    margin: 1.1rem 0 0.5rem;
-  }
-  article h3 {
-    @apply text-lg font-semibold;
-    margin: 1rem 0 0.5rem;
-  }
-  article h4,
-  article h5,
-  article h6 {
-    @apply font-semibold;
-    margin: 1rem 0 0.5rem;
-  }
-  article p {
-    margin: 0.75rem 0;
-  }
-  article ul {
-    @apply list-disc;
-    margin: 0.75rem 0;
-    padding-left: 1.5rem;
-  }
-  article ol {
-    @apply list-decimal;
-    margin: 0.75rem 0;
-    padding-left: 1.5rem;
-  }
-  article li {
-    margin: 0.25rem 0;
-  }
-  article a {
-    text-decoration: underline;
-  }
-  article blockquote {
-    margin: 1rem 0;
-    padding: 0.25rem 0 0.25rem 1rem;
-    border-left: 3px solid var(--edge);
-    opacity: 0.85;
-  }
-  article hr {
-    border: 0;
-    border-top: 1px solid var(--edge);
-    margin: 1.5rem 0;
-  }
-  article img {
-    max-width: 100%;
+  article {
+    @apply text-[0.9375rem] leading-relaxed text-[color:var(--ink)]/85;
   }
 }
 
+
+/*
+ * Markdown element classes, emitted by okf-web's classed-HTML writer on
+ * every rendered markdown element (`md-*`). Deliberately strong
+ * heading/body hierarchy — body copy slightly smaller, muted, and relaxed;
+ * headings step up sharply in size and weight with generous spacing.
+ */
 @layer components {
+  .md-p {
+    @apply my-3.5;
+  }
+  .md-h1 {
+    @apply mt-8 mb-3 text-3xl font-bold;
+  }
+  .md-h2 {
+    @apply mt-7 mb-2.5 text-2xl font-bold;
+  }
+  .md-h3 {
+    @apply mt-6 mb-2 text-xl font-semibold;
+  }
+  .md-h4,
+  .md-h5,
+  .md-h6 {
+    @apply mt-5 mb-1.5 text-lg font-semibold;
+  }
+  .md-list {
+    @apply my-3.5 list-disc pl-6;
+  }
+  ol.md-list {
+    @apply list-decimal;
+  }
+  .md-li {
+    @apply my-1;
+  }
+  .md-a {
+    @apply underline decoration-[color:var(--link)]/45 underline-offset-2;
+  }
+  .md-a:hover {
+    @apply decoration-[color:var(--link)];
+  }
+  .md-quote {
+    @apply my-5 border-l-[3px] border-[color:var(--edge)] py-2 pl-5 italic opacity-85;
+  }
+  .md-hr {
+    @apply my-8 border-t border-[color:var(--edge)];
+  }
+  .md-img {
+    @apply max-w-full;
+  }
+  .md-strong {
+    @apply font-bold text-[color:var(--ink)];
+  }
+  .md-em {
+    @apply italic;
+  }
+  .md-del {
+    @apply line-through;
+  }
+  .md-code {
+    @apply text-[0.9em];
+  }
+  .md-pre {
+    @apply overflow-x-auto;
+  }
+  .md-table {
+    @apply my-4 border-collapse;
+  }
+  .md-th {
+    @apply border border-[color:var(--edge)] px-2.5 py-1 text-left font-semibold;
+  }
+  .md-td {
+    @apply border border-[color:var(--edge)] px-2.5 py-1;
+  }
+  .md-footnote {
+    @apply text-sm opacity-85;
+  }
+  .md-footnote-ref,
+  .md-footnote-label {
+    @apply text-sm;
+  }
+  .md-task {
+    @apply mr-1;
+  }
+  .md-br {
+    @apply block;
+  }
+
+
   .site-header {
     @apply fixed inset-x-0 top-0 z-50 flex items-center gap-3 px-4 py-2;
     height: 3rem;

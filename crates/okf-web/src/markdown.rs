@@ -1,22 +1,26 @@
 //! Markdown body → HTML: link rewriting, the mermaid intercept, and event
-//! filtering before `push_html`.
+//! filtering before the classed-HTML writer.
 //!
 //! The pipeline, per concept body:
 //!
 //! 1. [`okf_core::markdown::rewrite_markdown_links`] maps `.md` targets to
 //!    the generated site's `.html` URLs (relative, so the site deploys under
 //!    any base path), leaving code fences and inline code untouched.
-//! 2. A [`pulldown_cmark::Parser`] event stream (tables enabled; raw `Html`
-//!    events dropped — pulldown's `unsafe` option stays off) intercepts
+//! 2. A [`pulldown_cmark::Parser`] event stream (GitHub-flavoured markdown:
+//!    tables, strikethrough, task lists, footnotes; raw `Html` events
+//!    dropped — pulldown's `unsafe` option stays off) intercepts
 //!    ` ```mermaid ` code blocks, emitting `<pre class="mermaid">` with the
 //!    escaped source as a render-failure/noscript fallback.
-//! 3. [`pulldown_cmark::html::push_html`] renders everything else, handling
-//!    all text and code escaping.
+//! 3. [`write_classed_html`] renders everything else, emitting a `md-*`
+//!    class on every element so the Tailwind-compiled stylesheet (whose
+//!    `source(none)` mode only defines classes named in `tailwind.css`)
+//!    styles markdown bodies through component classes, like the rest of
+//!    the site.
 
 use okf_core::markdown::{LinkRewriteAction, rewrite_markdown_links};
 use okf_core::{Bundle, ConceptId, LinkKind};
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
-use std::collections::VecDeque;
+use pulldown_cmark::{Alignment, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
+use std::collections::{HashMap, VecDeque};
 
 /// What [`render`] produced for one body.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -59,9 +63,15 @@ pub fn render(
         }
     })
     .0;
-    let mut intercept = Intercept::new(Parser::new_ext(&rewritten, Options::ENABLE_TABLES));
+    // GFM parity: tables, strikethrough, task lists, and footnotes. Raw HTML
+    // stays off (see `Intercept`) so enabling these is safe.
+    let opts = Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_FOOTNOTES;
+    let mut intercept = Intercept::new(Parser::new_ext(&rewritten, opts));
     let mut html_out = String::new();
-    html::push_html(&mut html_out, intercept.by_ref());
+    write_classed_html(&mut html_out, intercept.by_ref());
     RenderedBody {
         html: html_out,
         has_mermaid: intercept.has_mermaid,
@@ -125,7 +135,12 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
         let mut text = String::new();
         for event in self.iter.by_ref() {
             match event {
-                Event::End(TagEnd::Heading(end_level)) if end_level == level => break,
+                Event::End(TagEnd::Heading(end_level)) if end_level == level => {
+                    // Re-queue the End: the writer (and any downstream
+                    // consumer) still needs it to close the tag.
+                    buffer.push(Event::End(TagEnd::Heading(end_level)));
+                    break;
+                }
                 Event::Text(t) => {
                     text.push_str(&t);
                     buffer.push(Event::Text(t));
@@ -200,6 +215,234 @@ fn escape_pre(s: &str) -> String {
         }
     }
     out
+}
+
+/// The classed-HTML writer: pulldown-cmark's `push_html` emits bare element
+/// tags, but this site's stylesheet is compiled with Tailwind `source(none)`
+/// — only classes `@apply`'d in `tailwind.css` exist as CSS. So the writer
+/// emits a semantic `md-*` class on every markdown element (mirroring the
+/// `site-header`/`panel` component idiom) and `tailwind.css` defines each
+/// class with `@apply`. Output shape otherwise matches `push_html`: same
+/// tags, ids, and attribute escaping, with raw `Html` events already
+/// dropped upstream by [`Intercept`].
+///
+/// The `html` feature of pulldown-cmark is therefore unused; only the
+/// parser's event stream matters.
+#[allow(clippy::too_many_lines)] // one cohesive element writer; see above.
+fn write_classed_html<'a, I>(out: &mut String, mut events: I)
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    use std::fmt::Write as _;
+
+    /// Escapes text for HTML body nodes (&, <, >).
+    fn esc(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    }
+    /// Escapes for quoted attributes (adds `"` and `'`).
+    fn esc_attr(s: &str) -> String {
+        esc(s).replace('"', "&quot;").replace('\'', "&#x27;")
+    }
+
+    let mut footnote_numbers: HashMap<CowStr<'a>, usize> = HashMap::new();
+    let mut table_alignments: Vec<Alignment> = Vec::new();
+    let mut table_cell_index = 0;
+    let mut in_table_head = false;
+
+    while let Some(event) = events.next() {
+        match event {
+            Event::Start(tag) => match tag {
+                Tag::Paragraph => out.push_str("<p class=\"md-p\">"),
+                Tag::Heading {
+                    level,
+                    id,
+                    classes,
+                    attrs,
+                } => {
+                    // The writer emits only our md- classes; producer-side
+                    // heading classes/attrs never appear in output.
+                    let _ = (classes, attrs);
+                    write!(out, "<{level}").unwrap();
+                    if let Some(id) = id {
+                        write!(out, " id=\"{}\"", esc_attr(&id)).unwrap();
+                    }
+                    write!(out, " class=\"md-{level}\">").unwrap();
+                }
+                Tag::BlockQuote(_) => out.push_str("<blockquote class=\"md-quote\">"),
+                Tag::CodeBlock(kind) => match kind {
+                    CodeBlockKind::Fenced(info) => {
+                        let lang = info.split(' ').next().unwrap_or("");
+                        if lang.is_empty() {
+                            out.push_str("<pre class=\"md-pre\"><code class=\"md-code\">");
+                        } else {
+                            write!(
+                                out,
+                                "<pre class=\"md-pre\"><code class=\"md-code language-{}\">",
+                                esc_attr(lang)
+                            )
+                            .unwrap();
+                        }
+                    }
+                    CodeBlockKind::Indented => {
+                        out.push_str("<pre class=\"md-pre\"><code class=\"md-code\">");
+                    }
+                },
+                Tag::List(Some(start)) => {
+                    write!(out, "<ol class=\"md-list\" start=\"{start}\">").unwrap();
+                }
+                Tag::List(None) => out.push_str("<ul class=\"md-list\">"),
+                Tag::Item => out.push_str("<li class=\"md-li\">"),
+                Tag::Table(alignments) => {
+                    table_alignments = alignments;
+                    out.push_str("<table class=\"md-table\">");
+                }
+                Tag::TableHead => {
+                    in_table_head = true;
+                    table_cell_index = 0;
+                    out.push_str("<thead><tr>");
+                }
+                Tag::TableRow => {
+                    table_cell_index = 0;
+                    out.push_str("<tr>");
+                }
+                Tag::TableCell => {
+                    let (tag, cls) = if in_table_head {
+                        ("th", "md-th")
+                    } else {
+                        ("td", "md-td")
+                    };
+                    let align = match table_alignments.get(table_cell_index) {
+                        Some(Alignment::Left) => " text-left",
+                        Some(Alignment::Center) => " text-center",
+                        Some(Alignment::Right) => " text-right",
+                        _ => "",
+                    };
+                    table_cell_index += 1;
+                    write!(out, "<{tag} class=\"{cls}{align}\">").unwrap();
+                }
+                Tag::Emphasis => out.push_str("<em class=\"md-em\">"),
+                Tag::Superscript => out.push_str("<sup>"),
+                Tag::Subscript => out.push_str("<sub>"),
+                Tag::Strong => out.push_str("<strong class=\"md-strong\">"),
+                Tag::Strikethrough => out.push_str("<del class=\"md-del\">"),
+                Tag::Link {
+                    dest_url, title, ..
+                } => {
+                    let title_attr = if title.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" title=\"{}\"", esc_attr(&title))
+                    };
+                    write!(
+                        out,
+                        "<a class=\"md-a\" href=\"{}\"{title_attr}>",
+                        esc_attr(&dest_url)
+                    )
+                    .unwrap();
+                }
+                Tag::Image {
+                    dest_url, title, ..
+                } => {
+                    // alt text: drain events until End(Image), matching
+                    // push_html's raw_text (escaped for an attribute).
+                    let mut alt = String::new();
+                    for inner in events.by_ref() {
+                        match inner {
+                            Event::End(TagEnd::Image) => break,
+                            Event::Text(t) | Event::Code(t) => alt.push_str(&esc_attr(&t)),
+                            Event::SoftBreak | Event::HardBreak => alt.push(' '),
+                            _ => {}
+                        }
+                    }
+                    let title_attr = if title.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" title=\"{}\"", esc_attr(&title))
+                    };
+                    write!(
+                        out,
+                        "<img class=\"md-img\" src=\"{}\" alt=\"{alt}\"{title_attr} />",
+                        esc_attr(&dest_url)
+                    )
+                    .unwrap();
+                }
+                Tag::FootnoteDefinition(name) => {
+                    let len = footnote_numbers.len() + 1;
+                    let number = *footnote_numbers.entry(name.clone()).or_insert(len);
+                    write!(
+                        out,
+                        "<div class=\"md-footnote\" id=\"{}\"><sup class=\"md-footnote-label\">{number}",
+                        esc_attr(&name)
+                    )
+                    .unwrap();
+                }
+                Tag::DefinitionList
+                | Tag::DefinitionListTitle
+                | Tag::DefinitionListDefinition
+                | Tag::MetadataBlock(_)
+                | Tag::HtmlBlock => {}
+            },
+            Event::End(tag) => match tag {
+                TagEnd::Paragraph => out.push_str("</p>\n"),
+                TagEnd::Heading(level) => writeln!(out, "</{level}>").unwrap(),
+                TagEnd::BlockQuote(_) => out.push_str("</blockquote>\n"),
+                TagEnd::CodeBlock => out.push_str("</code></pre>\n"),
+                TagEnd::List(true) => out.push_str("</ol>\n"),
+                TagEnd::List(false) => out.push_str("</ul>\n"),
+                TagEnd::Item => out.push_str("</li>\n"),
+                TagEnd::Table => out.push_str("</tbody></table>\n"),
+                TagEnd::TableHead => {
+                    in_table_head = false;
+                    out.push_str("</tr></thead><tbody>\n");
+                }
+                TagEnd::TableRow => out.push_str("</tr>\n"),
+                TagEnd::TableCell => {
+                    out.push_str(if in_table_head { "</th>" } else { "</td>" });
+                }
+                TagEnd::Emphasis => out.push_str("</em>"),
+                TagEnd::Strong => out.push_str("</strong>"),
+                TagEnd::Strikethrough => out.push_str("</del>"),
+                TagEnd::Link => out.push_str("</a>"),
+                TagEnd::FootnoteDefinition => out.push_str("</sup></div>\n"),
+                TagEnd::Image | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_) => {}
+                TagEnd::DefinitionList => out.push_str("</dl>\n"),
+                TagEnd::DefinitionListTitle => out.push_str("</dt>\n"),
+                TagEnd::DefinitionListDefinition => out.push_str("</dd>\n"),
+                TagEnd::Subscript => out.push_str("</sub>"),
+                TagEnd::Superscript => out.push_str("</sup>"),
+            },
+            Event::Text(t) => out.push_str(&esc(&t)),
+            Event::Code(t) => write!(out, "<code class=\"md-code\">{}</code>", esc(&t)).unwrap(),
+            // Html reaching the writer is only Intercept's own escaped
+            // output (the mermaid <pre>); producer HTML is dropped upstream
+            // in `Intercept::next`.
+            Event::Html(t) => out.push_str(&t),
+            Event::InlineHtml(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {}
+            Event::SoftBreak => out.push('\n'),
+            Event::HardBreak => out.push_str("<br class=\"md-br\" />\n"),
+            Event::Rule => out.push_str("<hr class=\"md-hr\" />\n"),
+            Event::FootnoteReference(name) => {
+                let len = footnote_numbers.len() + 1;
+                let number = *footnote_numbers.entry(name.clone()).or_insert(len);
+                write!(
+                    out,
+                    "<sup class=\"md-footnote-ref\"><a class=\"md-a\" href=\"#{}\">{number}</a></sup>",
+                    esc_attr(&name)
+                )
+                .unwrap();
+            }
+            Event::TaskListMarker(checked) => {
+                writeln!(
+                    out,
+                    "<input type=\"checkbox\" class=\"md-task\" disabled=\"\"{} />",
+                    if checked { " checked=\"\"" } else { "" }
+                )
+                .unwrap();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -359,7 +602,11 @@ mod tests {
             "",
             &out_of,
         );
-        assert!(rendered.html.contains("<table>"), "{}", rendered.html);
+        assert!(
+            rendered.html.contains(r#"<table class="md-table">"#),
+            "table carries its component class: {}",
+            rendered.html
+        );
     }
 
     #[test]
