@@ -293,11 +293,15 @@
   }
 
   /* CSS-only collapse: when the (visually hidden) toggle checkbox is
-     checked, hide the tree and reclaim its grid column. */
-  body:has(.nav-toggle-input:checked) .tree {
+     checked, hide the tree and reclaim its grid column. The html.nav-hidden
+     class is the persisted form of the same state, applied by the nav
+     boot/toggle scripts so the choice survives reloads. */
+  body:has(.nav-toggle-input:checked) .tree,
+  html.nav-hidden .tree {
     @apply hidden;
   }
-  body:has(.nav-toggle-input:checked) .layout {
+  body:has(.nav-toggle-input:checked) .layout,
+  html.nav-hidden .layout {
     grid-template-columns: 1fr;
   }
 

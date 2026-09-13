@@ -175,6 +175,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                         }
                     }
                 }
+                script { (PreEscaped(NAV_TOGGLE_BOOT)) }
                 script { (PreEscaped(THEME_TOGGLE_BOOT)) }
                 @if wants_mermaid {
                     // Classic scripts, not modules: the vendored build is a
@@ -203,10 +204,11 @@ stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
 width=\"20\" height=\"20\" aria-hidden=\"true\">\
 <path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>";
 
-/// Applies the stored theme before first paint: sets `.dark`/`.light` on
-/// `<html>` from localStorage (`okf-theme`), leaving both classes off when
-/// the user never chose (system preference then drives the media query).
-/// Runs synchronously in `<head>` to avoid a flash of the wrong theme.
+/// Applies stored site state before first paint: the theme (`.dark`/`.light`
+/// on `<html>` from `okf-theme`) and the collapsed nav (`.nav-hidden` from
+/// `okf-nav`). Keys absent or unavailable leave both classes off, so the
+/// system color scheme and the expanded nav are the defaults. Runs
+/// synchronously in `<head>` to avoid a flash of the wrong state.
 const THEME_BOOT: &str = "\
 (function () {\
   try {\
@@ -214,7 +216,10 @@ const THEME_BOOT: &str = "\
     if (t === 'dark' || t === 'light') {\
       document.documentElement.classList.add(t);\
     }\
-  } catch (e) { /* no localStorage (e.g. privacy mode): system theme */ }\
+    if (localStorage.getItem('okf-nav') === 'collapsed') {\
+      document.documentElement.classList.add('nav-hidden');\
+    }\
+  } catch (e) { /* no localStorage (e.g. privacy mode): defaults */ }\
 })()";
 
 /// Wires the header's theme button: flips the html class, persists the
@@ -245,6 +250,24 @@ const THEME_TOGGLE_BOOT: &str = "\
     || (!root.classList.contains('light')\
         && window.matchMedia('(prefers-color-scheme: dark)').matches);\
   btn.setAttribute('aria-pressed', dark ? 'true' : 'false');\
+})()";
+
+/// Wires the hamburger's checkbox to the persisted nav state: on load it
+/// syncs the checkbox with the boot-applied `.nav-hidden` class; on change
+/// it flips the class and stores `okf-nav` (`collapsed`/removed).
+const NAV_TOGGLE_BOOT: &str = "\
+(function () {\
+  var root = document.documentElement;\
+  var box = document.getElementById('nav-toggle');\
+  if (!box) return;\
+  box.checked = root.classList.contains('nav-hidden');\
+  box.addEventListener('change', function () {\
+    root.classList.toggle('nav-hidden', box.checked);\
+    try {\
+      if (box.checked) localStorage.setItem('okf-nav', 'collapsed');\
+      else localStorage.removeItem('okf-nav');\
+    } catch (e) { /* ignore */ }\
+  });\
 })()";
 
 /// The hamburger icon: a plain inline SVG whose stroke inherits the button's

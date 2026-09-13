@@ -231,7 +231,9 @@ fn script_tag_in_frontmatter_is_escaped() {
     for script in page.match_indices("<script").map(|(i, _)| &page[i..]) {
         assert!(
             script.contains("localStorage.getItem('okf-theme')")
+                || script.contains("localStorage.getItem('okf-nav')")
                 || script.contains("document.querySelector('.theme-btn')")
+                || script.contains("document.getElementById('nav-toggle')")
                 || script.contains("mermaid"),
             "unexpected script content: {script}"
         );
