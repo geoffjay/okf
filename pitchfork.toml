@@ -1,0 +1,20 @@
+#:schema https://pitchfork.jdx.dev/schema.json
+
+[settings.general]
+mise = true
+
+[daemons.tailwind]
+run = "cargo make tailwind"
+watch = ["crates/okf-web/assets/**/*.css", "crates/okf-web/src/**/*.rs"]
+
+[daemons.site]
+run = "cargo make site"
+watch = [
+  "crates/okf-web/assets/**/*.css",
+  "crates/okf-web/assets/**/*.js",
+  "crates/okf-web/src/**/*.rs",
+  "docs/knowledgebase",
+]
+
+[groups.docs]
+daemons = ["tailwind", "site"]

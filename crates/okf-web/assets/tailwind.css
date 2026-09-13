@@ -14,36 +14,38 @@
 
 /*
  * Palette and surface tokens as plain custom properties (not `@theme`, which
- * tree-shakes unused values under `source(none)`). Badge hues mirror the
- * studio's theme roles and are identical in light and dark; surfaces and edges
- * flip with the color scheme below.
+ * tree-shakes unused values under `source(none)`). Surfaces, ink, and edges
+ * come from Tailwind's `mist` palette (v4.2+): mist-100 surface in light
+ * mode, mist-900 in dark. Accent colors (links, trust tiers, statuses,
+ * severities) use the standard Tailwind scales and flip to lighter steps in
+ * dark mode for contrast.
  */
 :root {
   /* Light values are the defaults; dark flips via the media query below
      (system preference) or the .dark class (explicit user choice). */
   color-scheme: light;
 
-  --surface: #fafafa;
-  --ink: #1a1a1a;
-  --edge: #d8d8d8;
-  --link: #0b62c4;
+  --surface: oklch(96.3% 0.002 197.1); /* mist-100 */
+  --ink: oklch(14.8% 0.004 228.8); /* mist-950 */
+  --edge: oklch(87.2% 0.007 219.6); /* mist-300 */
+  --link: oklch(48.8% 0.243 264.376); /* blue-700 */
 
-  --panel-bg: rgba(127, 127, 127, 0.04);
-  --code-bg: rgba(127, 127, 127, 0.12);
-  /* Diagram canvas: darkened from the surface in light mode, lifted in dark. */
-  --mermaid-bg: rgba(127, 127, 127, 0.12);
+  --panel-bg: oklch(98.7% 0.002 197.1); /* mist-50 */
+  --code-bg: oklch(92.5% 0.005 214.3); /* mist-200 */
+  /* Diagram canvas matches the panel background (the frontmatter card). */
+  --mermaid-bg: oklch(98.7% 0.002 197.1); /* mist-50, matches --panel-bg */
 
-  --tier-unverified: #a3670d;
-  --tier-machine: #6b4faf;
-  --tier-human: #0c7a43;
-  --status-draft: #a3670d;
-  --status-stable: #0c7a43;
-  --status-deprecated: #b03030;
-  --status-other: #666666;
-  --sev-info: #666666;
-  --sev-warning: #a3670d;
-  --sev-error: #b03030;
-  --danger: #b03030;
+  --tier-unverified: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --tier-machine: oklch(54.1% 0.281 293.009); /* violet-600 */
+  --tier-human: oklch(52.7% 0.154 150.069); /* green-700 */
+  --status-draft: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --status-stable: oklch(52.7% 0.154 150.069); /* green-700 */
+  --status-deprecated: oklch(50.5% 0.213 27.518); /* red-700 */
+  --status-other: oklch(45% 0.017 213.2); /* mist-600 */
+  --sev-info: oklch(45% 0.017 213.2); /* mist-600 */
+  --sev-warning: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --sev-error: oklch(50.5% 0.213 27.518); /* red-700 */
+  --danger: oklch(50.5% 0.213 27.518); /* red-700 */
 }
 
 /* System preference via the media query; explicit choice via the html
@@ -52,21 +54,46 @@
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
     color-scheme: dark;
-    --surface: #14161a;
-    --ink: #e6e6e6;
-    --edge: #2a2d33;
-    --link: #6db3f2;
-    /* Lifted gray over the dark surface so diagrams read as a raised card. */
-    --mermaid-bg: rgba(200, 200, 200, 0.07);
+    --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
+    --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
+    --edge: oklch(37.8% 0.015 216); /* mist-700 */
+    --link: oklch(80.9% 0.105 251.813); /* blue-300 */
+    --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --tier-unverified: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --tier-machine: oklch(70.2% 0.183 293.541); /* violet-400 */
+    --tier-human: oklch(72.3% 0.219 149.579); /* green-500 */
+    --status-draft: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --status-stable: oklch(72.3% 0.219 149.579); /* green-500 */
+    --status-deprecated: oklch(63.7% 0.237 25.331); /* red-500 */
+    --status-other: oklch(72.3% 0.014 214.4); /* mist-400 */
+    --sev-info: oklch(72.3% 0.014 214.4); /* mist-400 */
+    --sev-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
+    --danger: oklch(63.7% 0.237 25.331); /* red-500 */
   }
 }
 :root.dark {
   color-scheme: dark;
-  --surface: #14161a;
-  --ink: #e6e6e6;
-  --edge: #2a2d33;
-  --link: #6db3f2;
-  --mermaid-bg: rgba(200, 200, 200, 0.07);
+  --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
+  --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
+  --edge: oklch(37.8% 0.015 216); /* mist-700 */
+  --link: oklch(80.9% 0.105 251.813); /* blue-300 */
+  --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --tier-unverified: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --tier-machine: oklch(70.2% 0.183 293.541); /* violet-400 */
+  --tier-human: oklch(72.3% 0.219 149.579); /* green-500 */
+  --status-draft: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --status-stable: oklch(72.3% 0.219 149.579); /* green-500 */
+  --status-deprecated: oklch(63.7% 0.237 25.331); /* red-500 */
+  --status-other: oklch(72.3% 0.014 214.4); /* mist-400 */
+  --sev-info: oklch(72.3% 0.014 214.4); /* mist-400 */
+  --sev-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
+  --danger: oklch(63.7% 0.237 25.331); /* red-500 */
 }
 :root.light {
   color-scheme: light;

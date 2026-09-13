@@ -238,6 +238,8 @@ const THEME_TOGGLE_BOOT: &str = "\
       if (t) localStorage.setItem('okf-theme', t);\
       else localStorage.removeItem('okf-theme');\
     } catch (e) { /* ignore */ }\
+    /* Diagrams re-render with the matching mermaid theme when it flips. */\
+    root.dispatchEvent(new CustomEvent('okf-theme-change'));\
   }\
   btn.addEventListener('click', function () {\
     var dark = root.classList.contains('dark')\
@@ -245,7 +247,7 @@ const THEME_TOGGLE_BOOT: &str = "\
           && window.matchMedia('(prefers-color-scheme: dark)').matches);\
     apply(dark ? 'light' : 'dark');\
   });\
-  // Reflect the initial state on the button.
+  /* Reflect the initial state on the button. */\
   var dark = root.classList.contains('dark')\
     || (!root.classList.contains('light')\
         && window.matchMedia('(prefers-color-scheme: dark)').matches);\
@@ -281,15 +283,41 @@ aria-hidden=\"true\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg>";
 /// `<body>` so `.mermaid` nodes already exist. Strict security level (the
 /// default) sanitizes the diagram source; `startOnLoad: false` plus an
 /// explicit `run` keeps the render observable and marks processed nodes.
+/// The diagram theme follows the site theme (default in light, `dark` in
+/// dark mode) and re-renders when the theme toggle flips, so labels and
+/// edges stay legible on the dark card.
 const fn mermaid_boot() -> &'static str {
     "\
 if (window.mermaid) {\
-  mermaid.initialize({ securityLevel: 'strict', startOnLoad: false });\
-  mermaid.run({ querySelector: 'pre.mermaid', suppressErrors: true })\
-    .then(function () {\
-      document.querySelectorAll('pre.mermaid').forEach(function (el) { el.dataset.processed = '1'; });\
-    })\
-    .catch(function (e) { console.warn('okf-web: mermaid render failed:', e); });\
+  var isDark = function () {\
+    return document.documentElement.classList.contains('dark')\
+      || (!document.documentElement.classList.contains('light')\
+          && window.matchMedia('(prefers-color-scheme: dark)').matches);\
+  };\
+  var nodes = document.querySelectorAll('pre.mermaid');\
+  /* Cache each diagram's source before the first render replaces it with\
+     SVG, so a theme toggle can rebuild them with the matching theme. */\
+  nodes.forEach(function (el) { el.dataset.diagram = el.textContent; });\
+  var renderDiagrams = function (dark) {\
+    nodes.forEach(function (el) {\
+      el.textContent = el.dataset.diagram;\
+      el.removeAttribute('data-processed');\
+    });\
+    mermaid.initialize({\
+      securityLevel: 'strict',\
+      startOnLoad: false,\
+      theme: dark ? 'dark' : 'default'\
+    });\
+    mermaid.run({ querySelector: 'pre.mermaid', suppressErrors: true })\
+      .then(function () {\
+        nodes.forEach(function (el) { el.dataset.processed = '1'; });\
+      })\
+      .catch(function (e) { console.warn('okf-web: mermaid render failed:', e); });\
+  };\
+  renderDiagrams(isDark());\
+  document.documentElement.addEventListener('okf-theme-change', function () {\
+    renderDiagrams(isDark());\
+  });\
 }"
 }
 
@@ -838,7 +866,7 @@ pub fn graph_page(bundle: &Bundle) -> SitePage {
     }
 
     let body = html! {
-        p { "Every concept and cross-link in the bundle. Dashed edges mark broken links (permitted by the spec: they may be not-yet-written knowledge)." }
+        p class="md-p" { "Every concept and cross-link in the bundle. Dashed edges mark broken links (permitted by the spec: they may be not-yet-written knowledge)." }
         pre class="mermaid" { (src) }
     };
 
@@ -892,12 +920,15 @@ pub fn directory_page(bundle: &Bundle, dir: &ConceptId) -> SitePage {
     let mut first = true;
     for (type_, mut entries) in groups {
         entries.sort_by_key(|(title, _, _)| title.to_lowercase());
+        // Same md-* component classes the markdown writer emits, so the
+        // generated index pages share the site's prose styles.
         let section = html! {
-            @if !first { hr; }
-            h2 { (type_) }
-            ul {
+            @if !first { hr class="md-hr" {}
+            }
+            h2 class="md-h2" { (type_) }
+            ul class="md-list" {
                 @for (title, id, description) in &entries {
-                    li {
+                    li class="md-li" {
                         (title)
                         " "
                         (concept_link(bundle, &prefix, id))

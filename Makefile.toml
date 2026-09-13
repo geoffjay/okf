@@ -1,0 +1,10 @@
+[config]
+default_to_workspace = false
+
+[tasks.tailwind]
+command = "cargo"
+args = ["xtask", "tailwind"]
+
+[tasks.site]
+command = "cargo"
+args = ["run", "-p", "okf", "--", "site", "docs/knowledgebase"]

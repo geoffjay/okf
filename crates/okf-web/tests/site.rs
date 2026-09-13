@@ -329,6 +329,60 @@ fn graph_page_carries_flowchart_source() {
 }
 
 #[test]
+fn inline_scripts_are_wellformed() {
+    // The generator's trusted inline scripts are built from `\`-continued
+    // Rust strings, where a JS `//` comment silently swallows the rest of
+    // the script (the newline is stripped at compile time). Guard the whole
+    // class: balanced braces, no line comments outside string literals,
+    // and the theme toggle's wiring intact.
+    let b = fixture("scripts", false);
+    run(&b, None);
+    let page = b.page("policies/travel.html");
+    for script in page
+        .split("<script>")
+        .skip(1)
+        .map(|s| s.split("</script>").next().unwrap_or_default())
+    {
+        let mut depth = 0i32;
+        let mut in_str: Option<char> = None;
+        let mut in_comment = false;
+        let mut prev = '\0';
+        for c in script.chars() {
+            if in_comment {
+                if prev == '*' && c == '/' {
+                    in_comment = false;
+                    prev = '\0';
+                    continue;
+                }
+                prev = c;
+                continue;
+            }
+            match in_str {
+                Some(q) if c == q => in_str = None,
+                Some(_) => {}
+                None if c == '\'' || c == '"' => in_str = Some(c),
+                None if c == '{' => depth += 1,
+                None if c == '}' => depth -= 1,
+                None if c == '/' && prev == '/' => {
+                    // Line comments swallow the rest of the script because the
+                    // Rust `\` line-continuations strip every newline.
+                    panic!("line comment in trusted script: {script}");
+                }
+                None if c == '*' && prev == '/' => in_comment = true,
+                _ => {}
+            }
+            prev = c;
+        }
+        assert_eq!(depth, 0, "unbalanced braces in trusted script: {script}");
+        assert!(
+            in_str.is_none(),
+            "unterminated string literal in trusted script: {script}"
+        );
+    }
+    assert!(page.contains("root.dispatchEvent(new CustomEvent('okf-theme-change'))"));
+}
+
+#[test]
 fn determinism_pin_applies_to_staleness() {
     let b = TestBundle::new("stale");
     b.write(
