@@ -371,9 +371,14 @@ where
                 Tag::FootnoteDefinition(name) => {
                     let len = footnote_numbers.len() + 1;
                     let number = *footnote_numbers.entry(name.clone()).or_insert(len);
+                    // The label links back to its reference so the citation
+                    // is a working link, and it closes immediately so the
+                    // number and the body text sit on one line.
                     write!(
                         out,
-                        "<div class=\"md-footnote\" id=\"{}\"><sup class=\"md-footnote-label\">{number}",
+                        "<div class=\"md-footnote\" id=\"{}\">\
+                         <a class=\"md-footnote-backref\" href=\"#fnref-{}\">{number}</a> ",
+                        esc_attr(&name),
                         esc_attr(&name)
                     )
                     .unwrap();
@@ -405,7 +410,7 @@ where
                 TagEnd::Strong => out.push_str("</strong>"),
                 TagEnd::Strikethrough => out.push_str("</del>"),
                 TagEnd::Link => out.push_str("</a>"),
-                TagEnd::FootnoteDefinition => out.push_str("</sup></div>\n"),
+                TagEnd::FootnoteDefinition => out.push_str("</div>\n"),
                 TagEnd::Image | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_) => {}
                 TagEnd::DefinitionList => out.push_str("</dl>\n"),
                 TagEnd::DefinitionListTitle => out.push_str("</dt>\n"),
@@ -428,7 +433,9 @@ where
                 let number = *footnote_numbers.entry(name.clone()).or_insert(len);
                 write!(
                     out,
-                    "<sup class=\"md-footnote-ref\"><a class=\"md-a\" href=\"#{}\">{number}</a></sup>",
+                    "<sup class=\"md-footnote-ref\" id=\"fnref-{}\">\
+                     <a class=\"md-a\" href=\"#{}\">{number}</a></sup>",
+                    esc_attr(&name),
                     esc_attr(&name)
                 )
                 .unwrap();

@@ -179,6 +179,18 @@
   .md-em {
     @apply italic;
   }
+
+  /* Citation number at the start of a footnote body: a link back to its
+     reference, styled as a small superscript number rather than body copy. */
+  .md-footnote .md-footnote-backref {
+    @apply no-underline font-semibold;
+    color: var(--link);
+  }
+  /* The body is a single markdown paragraph; drop its block margins so the
+     number and the text share one line. */
+  .md-footnote .md-p {
+    @apply my-0 inline;
+  }
   .md-del {
     @apply line-through;
   }
