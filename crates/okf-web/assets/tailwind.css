@@ -28,7 +28,7 @@
 
   --panel-bg: rgba(127, 127, 127, 0.04);
   --code-bg: rgba(127, 127, 127, 0.12);
-  --mermaid-bg: rgba(127, 127, 127, 0.06);
+  --mermaid-bg: rgba(192, 192, 192, 0.2);
 
   --tier-unverified: #a3670d;
   --tier-machine: #6b4faf;
@@ -194,7 +194,7 @@
 
   .site-header {
     @apply fixed inset-x-0 top-0 z-50 flex items-center gap-3 px-4 py-2;
-    height: 3rem;
+    height: 4rem;
     border-bottom: 1px solid var(--edge);
     background: var(--surface);
   }
