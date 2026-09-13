@@ -19,7 +19,9 @@
  * flip with the color scheme below.
  */
 :root {
-  color-scheme: light dark;
+  /* Light values are the defaults; dark flips via the media query below
+     (system preference) or the .dark class (explicit user choice). */
+  color-scheme: light;
 
   --surface: #fafafa;
   --ink: #1a1a1a;
@@ -28,7 +30,8 @@
 
   --panel-bg: rgba(127, 127, 127, 0.04);
   --code-bg: rgba(127, 127, 127, 0.12);
-  --mermaid-bg: rgba(192, 192, 192, 0.2);
+  /* Diagram canvas: darkened from the surface in light mode, lifted in dark. */
+  --mermaid-bg: rgba(127, 127, 127, 0.12);
 
   --tier-unverified: #a3670d;
   --tier-machine: #6b4faf;
@@ -43,13 +46,30 @@
   --danger: #b03030;
 }
 
+/* System preference via the media query; explicit choice via the html
+   classes below (set by the theme bootstrap script from localStorage).
+   `color-scheme` also follows so form controls and scrollbars match. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light):not(.dark) {
+    color-scheme: dark;
     --surface: #14161a;
     --ink: #e6e6e6;
     --edge: #2a2d33;
     --link: #6db3f2;
+    /* Lifted gray over the dark surface so diagrams read as a raised card. */
+    --mermaid-bg: rgba(200, 200, 200, 0.07);
   }
+}
+:root.dark {
+  color-scheme: dark;
+  --surface: #14161a;
+  --ink: #e6e6e6;
+  --edge: #2a2d33;
+  --link: #6db3f2;
+  --mermaid-bg: rgba(200, 200, 200, 0.07);
+}
+:root.light {
+  color-scheme: light;
 }
 
 @layer base {
@@ -238,6 +258,40 @@
     outline: none;
   }
 
+  /* Theme toggle: styled like the menu button. Show the sun in dark mode
+     (click for light) and the moon in light mode (click for dark); the
+     theme bootstrap/toggle scripts drive the html class. */
+  .site-header .theme-btn {
+    @apply flex shrink-0 cursor-pointer items-center justify-center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .site-header .theme-btn:hover {
+    background: var(--panel-bg);
+  }
+  .site-header .theme-btn .icon-sun {
+    @apply hidden;
+  }
+  :root:not(.light):not(.dark) .site-header .theme-btn .icon-moon {
+    @apply hidden;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light):not(.dark) .site-header .theme-btn .icon-sun {
+      @apply block;
+    }
+    :root:not(.light):not(.dark) .site-header .theme-btn .icon-moon {
+      @apply hidden;
+    }
+  }
+  :root.dark .site-header .theme-btn .icon-sun {
+    @apply block;
+  }
+  :root.dark .site-header .theme-btn .icon-moon {
+    @apply hidden;
+  }
+
   /* CSS-only collapse: when the (visually hidden) toggle checkbox is
      checked, hide the tree and reclaim its grid column. */
   body:has(.nav-toggle-input:checked) .tree {
@@ -278,9 +332,12 @@
   }
 
   main {
-    @apply min-w-0;
+    /* Centered in the content column so collapsing the nav doesn't shove
+       the page left — the column grows and the content stays centered. */
+    @apply mx-auto min-w-0;
     padding: 2rem 3rem;
     max-width: 60rem;
+    width: 100%;
   }
   main > h1 {
     @apply text-3xl font-bold;
@@ -391,17 +448,17 @@
   }
 
   pre.mermaid {
-    @apply overflow-x-auto rounded-lg;
+    @apply overflow-x-auto rounded-lg border border-[color:var(--edge)] p-4 my-4;
     background: var(--mermaid-bg);
-    padding: 1rem;
 
     svg {
       max-width: 100%;
       height: auto;
+      margin: 0 auto;
+      display: block;
     }
   }
   pre.mermaid[data-processed] {
-    background: none;
-    padding: 0;
+    @apply p-4;
   }
 }

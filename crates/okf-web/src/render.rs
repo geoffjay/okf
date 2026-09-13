@@ -125,6 +125,10 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
+                // Pre-render theme application: reads localStorage before
+                // first paint to avoid a flash of the wrong theme. Our own
+                // trusted inline script, like mermaid_boot.
+                script { (PreEscaped(THEME_BOOT)) }
                 // PreEscaped: SITE_CSS is trusted compile-time content; maud's
                 // default escaping would turn `>` combinators and quoted
                 // font-family names into `&gt;`/`&quot;` and break the rules.
@@ -134,8 +138,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                 header class="site-header" {
                     // CSS-only collapse: a visually-hidden checkbox toggles
                     // the nav via `body:has(:checked)` selectors in the
-                    // stylesheet — no script tags on mermaid-free pages,
-                    // preserving the generator's no-scripts security posture.
+                    // stylesheet — no script needed for the nav.
                     // The `<label>` is the hamburger button.
                     input id="nav-toggle" class="nav-toggle-input" type="checkbox" {}
                     label class="menu-btn" for="nav-toggle" title="Toggle navigation" {
@@ -143,9 +146,16 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                         // currentColor, so light/dark schemes both work.
                         (PreEscaped(MENU_ICON))
                     }
-                    span class="site-name" { "okf site" }
                     div class="site-search" {
                         input type="search" name="q" placeholder="Search" aria-label="Search" {}
+                    }
+                    button class="theme-btn" type="button" title="Toggle theme"
+                        aria-label="Toggle dark mode" {
+                        // Sun shows in dark mode (click → light); moon shows
+                        // in light mode (click → dark). Visibility is driven
+                        // purely by the html theme class in the stylesheet.
+                        span class="icon-sun" { (PreEscaped(SUN_ICON)) }
+                        span class="icon-moon" { (PreEscaped(MOON_ICON)) }
                     }
                 }
                 div class="layout" {
@@ -165,6 +175,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                         }
                     }
                 }
+                script { (PreEscaped(THEME_TOGGLE_BOOT)) }
                 @if wants_mermaid {
                     // Classic scripts, not modules: the vendored build is a
                     // self-contained IIFE that sets a global, and classic
@@ -176,6 +187,65 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
         }
     }
 }
+
+/// The sun glyph, shown in dark mode (clicking switches to light).
+const SUN_ICON: &str = "\
+<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" width=\"20\" height=\"20\" \
+aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"4\"/>\
+<path d=\"M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41\
+M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41\"/></svg>";
+
+/// The moon glyph, shown in light mode (clicking switches to dark).
+const MOON_ICON: &str = "\
+<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
+width=\"20\" height=\"20\" aria-hidden=\"true\">\
+<path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>";
+
+/// Applies the stored theme before first paint: sets `.dark`/`.light` on
+/// `<html>` from localStorage (`okf-theme`), leaving both classes off when
+/// the user never chose (system preference then drives the media query).
+/// Runs synchronously in `<head>` to avoid a flash of the wrong theme.
+const THEME_BOOT: &str = "\
+(function () {\
+  try {\
+    var t = localStorage.getItem('okf-theme');\
+    if (t === 'dark' || t === 'light') {\
+      document.documentElement.classList.add(t);\
+    }\
+  } catch (e) { /* no localStorage (e.g. privacy mode): system theme */ }\
+})()";
+
+/// Wires the header's theme button: flips the html class, persists the
+/// choice, and keeps `aria-pressed` accurate. `okf-theme` is also keyed so
+/// multiple okf sites on the same origin share the choice.
+const THEME_TOGGLE_BOOT: &str = "\
+(function () {\
+  var btn = document.querySelector('.theme-btn');\
+  if (!btn) return;\
+  var root = document.documentElement;\
+  function apply(t) {\
+    root.classList.remove('dark', 'light');\
+    if (t) root.classList.add(t);\
+    btn.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');\
+    try {\
+      if (t) localStorage.setItem('okf-theme', t);\
+      else localStorage.removeItem('okf-theme');\
+    } catch (e) { /* ignore */ }\
+  }\
+  btn.addEventListener('click', function () {\
+    var dark = root.classList.contains('dark')\
+      || (!root.classList.contains('light')\
+          && window.matchMedia('(prefers-color-scheme: dark)').matches);\
+    apply(dark ? 'light' : 'dark');\
+  });\
+  // Reflect the initial state on the button.
+  var dark = root.classList.contains('dark')\
+    || (!root.classList.contains('light')\
+        && window.matchMedia('(prefers-color-scheme: dark)').matches);\
+  btn.setAttribute('aria-pressed', dark ? 'true' : 'false');\
+})()";
 
 /// The hamburger icon: a plain inline SVG whose stroke inherits the button's
 /// current color, so light/dark schemes both work with no custom CSS.

@@ -225,8 +225,18 @@ fn script_tag_in_frontmatter_is_escaped() {
     );
     assert!(page.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
     assert!(!page.contains("<img src=x"));
-    // The only script tags on a mermaid-free page: none.
-    assert!(!page.contains("<script"));
+    // Producer scripts never survive: every <script> on the page is one of
+    // the generator's own trusted inline bootstrap snippets (theme
+    // boot/toggle), never bundle content.
+    for script in page.match_indices("<script").map(|(i, _)| &page[i..]) {
+        assert!(
+            script.contains("localStorage.getItem('okf-theme')")
+                || script.contains("document.querySelector('.theme-btn')")
+                || script.contains("mermaid"),
+            "unexpected script content: {script}"
+        );
+    }
+    assert!(!page.contains("<script>alert"));
 }
 
 #[test]
