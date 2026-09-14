@@ -355,9 +355,6 @@
     max-height: calc(100vh - 3rem);
     border-right: 1px solid var(--edge);
 
-    .site-title {
-      @apply mb-2 font-bold;
-    }
     .special a,
     li a {
       @apply block no-underline;

@@ -713,6 +713,10 @@ pub struct SiteArgs {
     /// Output directory (defaults to `<bundle>/site`)
     #[arg(long, value_name = "DIR")]
     pub out: Option<PathBuf>,
+
+    /// Site title shown in the header (defaults to "okf site")
+    #[arg(long, value_name = "TITLE")]
+    pub title: Option<String>,
 }
 
 /// Runs the `okf` CLI on `args` (the program name already stripped) and
@@ -817,6 +821,7 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
         root: args.bundle.clone(),
         out_dir: out_dir.clone(),
         today: args.today,
+        title: args.title.clone(),
     })
     .map_err(|e| CliError::data(format!("site failed: {e}")))?;
 

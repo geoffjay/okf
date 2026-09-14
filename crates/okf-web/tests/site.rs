@@ -88,6 +88,7 @@ fn run(b: &TestBundle, today: Option<Date>) -> okf_web::SiteSummary {
         root: b.root.clone(),
         out_dir: b.site(),
         today,
+        title: None,
     })
     .unwrap()
 }
@@ -445,6 +446,7 @@ fn out_dir_is_created_when_missing() {
         root: b.root.clone(),
         out_dir: out.clone(),
         today: None,
+        title: None,
     })
     .unwrap();
     assert!(out.join("index.html").is_file());
@@ -489,5 +491,47 @@ fn nav_folders_are_titled_without_a_trailing_slash() {
     assert!(
         dir_page.contains("<title>Foo Kebab</title>"),
         "dir title: {dir_page}"
+    );
+}
+
+#[test]
+fn site_title_lives_in_the_header_and_is_configurable() {
+    let b = fixture("site-title", false);
+
+    // Default: "okf site" in the header, not in the nav sidebar.
+    run(&b, None);
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"<header class="site-header">"#),
+        "header present: {dash}"
+    );
+    let header = &dash[dash.find("<header").unwrap()..dash.find("</header>").unwrap()];
+    assert!(
+        header.contains(r#"<a class="site-name" href="index.html">okf site</a>"#),
+        "default title in header: {header}"
+    );
+    assert!(
+        !dash.contains(r#"class="site-title""#),
+        "old nav site-title is gone: {dash}"
+    );
+
+    // Custom title via SiteOptions.title.
+    generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: Some("Foo Site".to_string()),
+    })
+    .unwrap();
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"<a class="site-name" href="index.html">Foo Site</a>"#),
+        "custom title in header: {dash}"
+    );
+    // A nested page links back to the header title with the right prefix.
+    let travel = b.page("policies/travel.html");
+    assert!(
+        travel.contains(r#"<a class="site-name" href="../index.html">Foo Site</a>"#),
+        "custom title with prefix on nested page: {travel}"
     );
 }

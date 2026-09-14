@@ -11,6 +11,7 @@
 //!     root: "./my_bundle".into(),
 //!     out_dir: "./site".into(),
 //!     today: None,
+//!     title: None,
 //! })?;
 //! # Ok::<(), okf_web::SiteError>(())
 //! ```
@@ -69,7 +70,12 @@ pub struct SiteOptions {
     pub out_dir: PathBuf,
     /// The date staleness is evaluated against; `None` uses the system clock.
     pub today: Option<Date>,
+    /// The site title shown in the header; `None` uses [`DEFAULT_SITE_TITLE`].
+    pub title: Option<String>,
 }
+
+/// The site title used when [`SiteOptions::title`] is `None`.
+pub const DEFAULT_SITE_TITLE: &str = "okf site";
 
 impl SiteOptions {
     /// The effective build date, from `today` or the system clock.
@@ -83,6 +89,12 @@ impl SiteOptions {
             month: 1,
             day: 1,
         })
+    }
+
+    /// The effective site title, from `title` or [`DEFAULT_SITE_TITLE`].
+    #[must_use]
+    pub fn effective_title(&self) -> &str {
+        self.title.as_deref().unwrap_or(DEFAULT_SITE_TITLE)
     }
 }
 
@@ -108,6 +120,7 @@ pub struct SiteSummary {
 /// [`Bundle::load`]) or if any output file cannot be written.
 pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     let today = options.effective_today();
+    let site_title = options.effective_title().to_string();
     let SiteOptions { root, out_dir, .. } = options;
     let bundle = Bundle::load(&root)?;
 
@@ -147,7 +160,7 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     fs::create_dir_all(&out_dir).map_err(|e| SiteError::Io(e, out_dir.clone()))?;
 
     for page in &pages {
-        write_page(page, &bundle, &out_dir, bundle_has_mermaid)?;
+        write_page(page, &bundle, &out_dir, bundle_has_mermaid, &site_title)?;
     }
 
     if bundle_has_mermaid {

@@ -95,6 +95,7 @@ pub fn write_page(
     bundle: &Bundle,
     out_dir: &std::path::Path,
     bundle_has_mermaid: bool,
+    site_title: &str,
 ) -> Result<(), crate::SiteError> {
     use std::fs;
 
@@ -103,12 +104,12 @@ pub fn write_page(
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| crate::SiteError::Io(e, parent.to_path_buf()))?;
     }
-    let document = layout(page, bundle, bundle_has_mermaid);
+    let document = layout(page, bundle, bundle_has_mermaid, site_title);
     fs::write(&dest, document.into_string()).map_err(|e| crate::SiteError::Io(e, dest.clone()))
 }
 
 /// The full HTML document for one page.
-fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup {
+fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title: &str) -> Markup {
     let SitePage {
         rel_path,
         title,
@@ -146,6 +147,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool) -> Markup 
                         // currentColor, so light/dark schemes both work.
                         (PreEscaped(MENU_ICON))
                     }
+                    a class="site-name" href=(format!("{prefix}index.html")) { (site_title) }
                     div class="site-search" {
                         input type="search" name="q" placeholder="Search" aria-label="Search" {}
                     }
@@ -338,9 +340,6 @@ pub fn nav_tree(bundle: &Bundle, prefix: &str) -> Markup {
             .push((name, concept.id.clone(), concept.display_title()));
     }
     html! {
-        div class="site-title" {
-            a href=(format!("{prefix}index.html")) { "okf site" }
-        }
         div class="special" {
             a href=(format!("{prefix}index.html")) { "Dashboard" }
             a href=(format!("{prefix}__okf/graph.html")) { "Graph" }
