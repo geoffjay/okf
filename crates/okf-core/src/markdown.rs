@@ -48,6 +48,55 @@ pub fn heading_slug(text: &str) -> String {
     slug.trim_matches('-').to_string()
 }
 
+/// A per-document slug allocator that disambiguates duplicate heading
+/// slugs with `-1`, `-2`, … suffixes, matching GitHub's anchor behavior.
+///
+/// One allocator must own every heading of a document (page renderers and
+/// search indexes alike) so emitted `id` attributes and index anchors
+/// cannot drift apart.
+#[derive(Clone, Debug, Default)]
+pub struct SlugAllocator {
+    used: std::collections::HashSet<String>,
+}
+
+impl SlugAllocator {
+    /// Allocates the slug for `text`, suffixing when the base slug is
+    /// already taken. An empty heading text yields an empty slug that is
+    /// never registered, mirroring the permissive handling of headings
+    /// with no anchorable characters.
+    #[must_use]
+    pub fn allocate(&mut self, text: &str) -> String {
+        let base = heading_slug(text);
+        if base.is_empty() {
+            return base;
+        }
+        let mut slug = base.clone();
+        let mut n: usize = 0;
+        while self.used.contains(&slug) {
+            n += 1;
+            slug = format!("{base}-{n}");
+        }
+        self.used.insert(slug.clone());
+        slug
+    }
+
+    /// The already-allocated slug for `text` without registering a new one:
+    /// the suffix a *second* allocator would hand out for the same text.
+    /// Useful for index builders that must mirror a page's allocations
+    /// without mutating them.
+    #[must_use]
+    pub fn peek_duplicate(&self, text: &str) -> String {
+        let base = heading_slug(text);
+        let mut slug = base.clone();
+        let mut n: usize = 0;
+        while self.used.contains(&slug) {
+            n += 1;
+            slug = format!("{base}-{n}");
+        }
+        slug
+    }
+}
+
 /// Parses a single line as an ATX heading (`# ` through `###### `).
 ///
 /// Returns `(level, text)` if the line is a heading, or `None` otherwise.

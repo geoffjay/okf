@@ -15,13 +15,17 @@ categories.workspace = true
 [lints]
 workspace = true
 
-# maud (compile-time html! templates, zero runtime) and pulldown-cmark
-# (event-stream markdown rendering) are the only external dependencies beyond
-# okf-core/okf-validator; the workspace's minimal-dependency ethos rules out
-# anything heavier. See docs/knowledgebase/decisions/okf_web_static_site.md.
+# maud (compile-time html! templates, zero runtime), pulldown-cmark
+# (event-stream markdown rendering), and serde_json (search-index.js
+# serialization — hand-rolled JSON escaping is a bug farm) are the only
+# external dependencies beyond okf-core/okf-validator; the workspace's
+# minimal-dependency ethos rules out anything heavier. See
+# docs/knowledgebase/decisions/okf_web_static_site.md.
 [dependencies]
 okf-core.workspace = true
 okf-validator.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 maud = "0.27.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 

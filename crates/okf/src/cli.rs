@@ -17,7 +17,7 @@
 //!   graph        [bundle]   Print the cross-link graph (--format text|mermaid|json, --json).
 //!   computations [bundle]   List Attested Computation contracts (--json).
 //!   diff         <a> <b>    OKF-semantics diff between two bundles (--json).
-//!   index        [bundle]   (Re)generate every index.md in a bundle (--json).
+//!   search       <query...> Search metadata and body text (--json, --today, --limit).
 //!   parse        <file>     Parse one concept document and print its structure (--json).
 //!   studio       [bundle]   Open the interactive terminal studio (--today, --tab, --no-watch).
 //!   site         [bundle]   Generate a static HTML site into ./site (--today, --out).
@@ -26,7 +26,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 use crate::{
-    Bundle, BundleInitOptions, ConceptId, ConceptOptions, Date, Document, DocumentError,
+    Bundle, BundleInitOptions, Concept, ConceptId, ConceptOptions, Date, Document, DocumentError,
     FixOptions, Link, MergeOptions, MoveOptions, RemoveOptions, RenameSectionOptions, Report,
     Severity, SplitOptions, TrustTier, Value, bundle_diff, create_concept, init_bundle,
     lint_bundle_at, merge_concepts, move_concept, remediate_bundle, remediate_file, remove_concept,
@@ -163,6 +163,8 @@ pub enum Commands {
     Diff(DiffArgs),
     /// (Re)generate every index.md in the bundle (--json)
     Index(IndexArgs),
+    /// Search concept metadata and body text (--json, --today, --limit)
+    Search(SearchArgs),
     /// Parse one concept document and print its structure (--json)
     Parse(ParseArgs),
     /// Open the interactive terminal studio for a bundle
@@ -338,6 +340,34 @@ pub struct LinksArgs {
     /// Include external links
     #[arg(short, long, visible_alias = "external")]
     pub all: bool,
+
+    /// Output results as JSON
+    #[arg(short, long)]
+    pub json: bool,
+
+    /// Output format (text or json)
+    #[arg(long, value_parser = ["text", "json"])]
+    pub format: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SearchArgs {
+    /// The search query: free text plus `#tag`, `type:`, `tier:`, `status:`,
+    /// `is:stale`, `is:broken` filters
+    #[arg(required = true, num_args = 1..)]
+    pub query: Vec<String>,
+
+    /// Bundle directory to search (defaults to current directory)
+    #[arg(long, default_value = ".")]
+    pub bundle: PathBuf,
+
+    /// Evaluate staleness (`is:stale`) against this date instead of today
+    #[arg(long, value_parser = parse_date)]
+    pub today: Option<Date>,
+
+    /// Maximum results per hit class (metadata and body)
+    #[arg(long, default_value = "20")]
+    pub limit: usize,
 
     /// Output results as JSON
     #[arg(short, long)]
@@ -751,6 +781,7 @@ pub fn run(args: &[String]) -> ExitCode {
         Commands::Fmt(ref a) => cmd_fmt(a),
         Commands::Info(ref a) => cmd_info(a),
         Commands::Trust(ref a) => cmd_trust(a),
+        Commands::Search(a) => cmd_search(&a),
         Commands::Links(ref a) => cmd_links(a),
         Commands::Graph(ref a) => cmd_graph(a),
         Commands::Computations(ref a) => cmd_computations(a),
@@ -1398,6 +1429,69 @@ fn cmd_index(args: &IndexArgs) -> Result<ExitCode, CliError> {
         println!("\n{} index file(s) regenerated.", written.len());
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_search(args: &SearchArgs) -> Result<ExitCode, CliError> {
+    let bundle = load(&args.bundle)?;
+    let today = args.today;
+    let query = args.query.join(" ");
+    let json = args.json || args.format.as_deref() == Some("json");
+    let limit = args.limit;
+
+    let index = crate::SearchIndex::build(&bundle, today);
+    let hits = index.search(&query, limit);
+    let body_hits = crate::search_bodies_indexed(&bundle, &index, &query, limit);
+
+    if json {
+        print_search_json(&query, &hits, &body_hits);
+    } else {
+        print_search_text(&bundle, &hits, &body_hits);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Text output: metadata hits first (the palette's row order), then body
+/// hits with line numbers, then a summary count.
+fn print_search_text(bundle: &Bundle, hits: &[crate::SearchHit], body_hits: &[crate::BodyHit]) {
+    for hit in hits {
+        let concept = bundle.get(&hit.id);
+        let status = concept.map_or(String::new(), |c| c.status().as_str().to_string());
+        if let Some(heading) = &hit.heading {
+            println!("  {} # {}", hit.id, heading);
+        } else {
+            let title = concept.map_or_else(|| hit.id.to_string(), Concept::display_title);
+            println!("{} [{}] {}", hit.id, status, title);
+        }
+    }
+    for hit in body_hits {
+        println!("{}:{}  {}", hit.id, hit.line, hit.snippet);
+    }
+    println!();
+    println!(
+        "{} metadata hit(s), {} body hit(s)",
+        hits.len(),
+        body_hits.len()
+    );
+}
+
+/// JSON output: mirrors `print_trust_json`'s hand-built `serde_json` shape.
+fn print_search_json(query: &str, hits: &[crate::SearchHit], body_hits: &[crate::BodyHit]) {
+    let val = serde_json::json!({
+        "query": query,
+        "hits": hits.iter().map(|h| serde_json::json!({
+            "id": h.id.to_string(),
+            "heading": h.heading,
+            "label": h.label,
+            "score": h.score,
+        })).collect::<Vec<_>>(),
+        "body_hits": body_hits.iter().map(|h| serde_json::json!({
+            "id": h.id.to_string(),
+            "line": h.line,
+            "snippet": h.snippet,
+            "start": h.start,
+        })).collect::<Vec<_>>(),
+    });
+    println!("{}", serde_json::to_string_pretty(&val).unwrap_or_default());
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

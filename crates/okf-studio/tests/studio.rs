@@ -259,6 +259,56 @@ fn keys_drive_tabs_palette_and_quit() {
 }
 
 #[test]
+fn palette_body_rows_search_and_open() {
+    let bundle = fixture();
+    let mut app = app_with(&bundle);
+
+    ch(&mut app, '/');
+    for c in "reimbursement".chars() {
+        ch(&mut app, c);
+    }
+
+    // Body-text rows appear beneath the metadata rows; metadata count sets
+    // the row offset of the first body row.
+    let state = match app.overlays.last() {
+        Some(Overlay::Palette(state)) => state,
+        _ => panic!("palette should be open"),
+    };
+    let metadata_len = match app.palette_results(state) {
+        okf_studio::app::PaletteResults::Search(hits, body_hits) => {
+            assert!(
+                hits.iter()
+                    .any(|h| h.id.to_string() == "policies/travel_expenses")
+            );
+            assert!(
+                !body_hits.is_empty(),
+                "body text mentioning reimbursement must hit"
+            );
+            assert!(
+                body_hits
+                    .iter()
+                    .all(|h| h.id.to_string() == "policies/travel_expenses")
+            );
+            hits.len()
+        }
+        _ => panic!("expected search results"),
+    };
+
+    // Selecting a body row (below the metadata rows) opens the concept.
+    for _ in 0..metadata_len {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Enter);
+    assert!(app.overlays.is_empty());
+    assert_eq!(
+        app.explorer.selected,
+        Some(TreeSel::Concept(
+            ConceptId::parse("policies/travel_expenses").unwrap()
+        ))
+    );
+}
+
+#[test]
 fn selection_survives_snapshot_swaps() {
     let bundle = fixture();
     let mut app = app_with(&bundle);

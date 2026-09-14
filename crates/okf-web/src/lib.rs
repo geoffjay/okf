@@ -55,6 +55,7 @@
 
 pub mod markdown;
 pub mod render;
+pub mod search;
 
 use okf_core::{Bundle, BundleError, ConceptId, Date};
 use render::{SitePage, write_page};
@@ -170,7 +171,9 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         .filter(|p| matches!(p.rel_path, PagePath::Concept(_)))
         .count();
 
-    // The assets ship only when some page needs them, so clean bundles
+    // The search index + client ship unconditionally (the header input is
+    // on every page) but are *fetched* lazily on first keystroke; mermaid
+    // and shiki ship only when some page needs them, so clean bundles
     // never download what they do not use.
     let bundle_has_mermaid = pages.iter().any(|p| p.has_mermaid);
     let bundle_has_code = pages.iter().any(|p| p.has_shiki);
@@ -181,9 +184,12 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         write_page(page, &bundle, &out_dir, bundle_has_mermaid, &site_title)?;
     }
 
-    if bundle_has_mermaid || bundle_has_code {
+    {
         let assets_dir = out_dir.join("assets");
         fs::create_dir_all(&assets_dir).map_err(|e| SiteError::Io(e, assets_dir.clone()))?;
+        let search_path = assets_dir.join("search-index.js");
+        let search_js = crate::search::search_index_js(&bundle, Some(today));
+        fs::write(&search_path, search_js).map_err(|e| SiteError::Io(e, search_path.clone()))?;
         if bundle_has_mermaid {
             let mermaid_path = assets_dir.join("mermaid.min.js");
             fs::write(&mermaid_path, MERMAID_JS)
@@ -191,8 +197,7 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         }
         if bundle_has_code {
             let shiki_path = assets_dir.join("shiki.min.js");
-            fs::write(&shiki_path, SHIKI_JS)
-                .map_err(|e| SiteError::Io(e, shiki_path.clone()))?;
+            fs::write(&shiki_path, SHIKI_JS).map_err(|e| SiteError::Io(e, shiki_path.clone()))?;
         }
     }
 
@@ -201,7 +206,6 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         mermaid_pages,
         code_pages,
     })
-
 }
 
 /// Where a generated page lives in the output tree.

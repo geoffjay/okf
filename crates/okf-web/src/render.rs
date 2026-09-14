@@ -108,8 +108,7 @@ pub fn write_page(
         fs::create_dir_all(parent).map_err(|e| crate::SiteError::Io(e, parent.to_path_buf()))?;
     }
     let document = layout(page, bundle, bundle_has_mermaid, site_title);
-    fs::write(&dest, document.into_string())
-        .map_err(|e| crate::SiteError::Io(e, dest.clone()))
+    fs::write(&dest, document.into_string()).map_err(|e| crate::SiteError::Io(e, dest.clone()))
 }
 
 /// The full HTML document for one page.
@@ -156,7 +155,12 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                     }
                     a class="site-name" href=(format!("{prefix}index.html")) { (site_title) }
                     div class="site-search" {
-                        input type="search" name="q" placeholder="Search" aria-label="Search" {}
+                        // data-asset: the lazy fetch target for the search
+                        // index + client; data-prefix: the depth-correct
+                        // ../ chain the client prefixes result hrefs with.
+                        input type="search" name="q" placeholder="Search" aria-label="Search"
+                            data-asset=(format!("{prefix}assets/search-index.js"))
+                            data-prefix=(prefix) {}
                     }
                     button class="theme-btn" type="button" title="Toggle theme"
                         aria-label="Toggle dark mode" {
@@ -185,6 +189,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                     }
                 }
                 script { (PreEscaped(NAV_TOGGLE_BOOT)) }
+                script { (PreEscaped(SEARCH_ARM_BOOT)) }
                 script { (PreEscaped(THEME_TOGGLE_BOOT)) }
                 @if wants_mermaid {
                     // Classic scripts, not modules: the vendored build is a
@@ -287,6 +292,31 @@ const NAV_TOGGLE_BOOT: &str = "\
   });\
 })()";
 
+/// Arms the header search input: on the first keystroke it injects the
+/// search asset (the generated index + client, a classic script so it works
+/// over `file://`); the client then binds the input and serves the query
+/// that triggered the load. Until then, no search bytes are fetched — a
+/// clean bundle pays nothing.
+const SEARCH_ARM_BOOT: &str = "\
+(function () {\
+  var input = document.querySelector('.site-search input[type=\"search\"]');\
+  if (!input || input.dataset.armed) return;\
+  input.dataset.armed = '1';\
+  function arm() {\
+    if (window.okfSearchIndex !== undefined) return;\
+    var s = document.createElement('script');\
+    s.src = input.dataset.asset;\
+    s.onerror = function () { input.disabled = true; input.placeholder = 'Search unavailable'; };\
+    document.head.appendChild(s);\
+  }\
+  input.addEventListener('input', function () {\
+    if (input.value.trim()) arm();\
+  });\
+  input.addEventListener('keydown', function (e) {\
+    if (e.key === 'Enter') arm();\
+  });\
+})()";
+
 /// The hamburger icon: a plain inline SVG whose stroke inherits the button's
 /// current color, so light/dark schemes both work with no custom CSS.
 const MENU_ICON: &str = "\
@@ -381,7 +411,6 @@ if (window.okfShikiReady) {\
   });\
 }"
 }
-
 
 /// The nav tree: the bundle's directory structure with links to every
 /// concept page, plus the special pages.

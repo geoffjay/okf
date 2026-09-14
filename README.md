@@ -47,9 +47,9 @@ A **pure-Rust** implementation, library and CLI toolkit for the [Open Knowledge 
 - [CLI reference and workflows](#cli-reference-and-workflows)
   - [Interactive studio: studio](#interactive-studio-studio)
   - [Scaffolding: init and new](#scaffolding-init-and-new)
-  - [Bundle manipulation: mv, rm, split, and merge](#bundle-manipulation-mv-rm-split-and-merge)
   - [Quality gate: validate and lint](#quality-gate-validate-and-lint)
   - [Auditing trust: trust and info](#auditing-trust-trust-and-info)
+  - [Searching: search](#searching-search)
   - [Link graph and discovery: links and graph](#link-graph-and-discovery-links-and-graph)
   - [Listing computations: computations](#listing-computations-computations)
   - [Semantic diffs: diff](#semantic-diffs-diff)
@@ -155,8 +155,10 @@ okf studio .
 
 Unlike one-off commands that run once and exit, the studio stays open and automatically updates when files are edited on disk.
 
+- **Omnisearch (`/`)**: Fuzzy search across ids, titles, tags, headings, and
+  body text with the shared filter syntax (`#tag`, `tier:`, `is:stale`,
+  `is:broken`) — the same engine as `okf search` and the site.
 - **Browse and read**: Navigate directories, read rendered Markdown, follow links, and inspect metadata and revision history.
-- **Visual link graph**: Explore connections and dependencies between concepts interactively.
 - **Audit bundle health**: View trust levels, freshness, and concepts that need attention.
 - **Computations**: Inspect Attested Computation contracts and test parameter inputs.
 - **Refactor safely**: Move, rename, merge, split, or delete concepts with preview confirmation before changes are saved.
@@ -201,6 +203,13 @@ okf site . --today 2026-07-01  # pin staleness for reproducible builds
 - **Parity panels.** Every concept page shows what the studio inspector does:
   trust/status/staleness badges, backlinks, sources with footnote→source
   attribution, a headings table of contents, and validator/lint findings.
+- **Search that works anywhere.** Every page's header search runs the same
+  engine as `okf search` and the studio palette: `assets/search-index.js`
+  (build-time JSON index of metadata, heading anchors, and bodies, with
+  HTML-breaking bytes JS-escaped) plus a first-party vanilla-JS client,
+  lazy-fetched only on the first keystroke — no external search binary, no
+  WASM. Filters (`#tag`, `tier:`, `is:stale`, …) compose exactly as in the
+  CLI.
 - **Dashboard and graph.** A trust dashboard (tier distribution, attention
   queue, actor stats — the numbers agree with `okf info` / `okf trust`) plus a
   bundle-wide mermaid cross-link graph.
@@ -209,6 +218,7 @@ okf site . --today 2026-07-01  # pin staleness for reproducible builds
 [Using as a Rust library](#using-as-a-rust-library)). Built on the
 [`okf-web`](https://crates.io/crates/okf-web) crate, whose `generate` entry
 point can be called directly.
+
 ---
 
 ## Anatomy of an OKF bundle
@@ -473,6 +483,37 @@ computations/mileage_calc [stable] machine-confirmed
 okf info ./company_knowledge
 ```
 
+### Searching: search
+
+`okf search` runs the same engine the studio palette uses over concept
+metadata (ids, titles, descriptions, tags, headings) and body text, with a
+composable filter syntax shared by every search surface:
+
+| Term          | Meaning                          | Matches                        |
+|---------------|----------------------------------|--------------------------------|
+| `#tag`        | frontmatter tag                  | `tags` (case-insensitive)      |
+| `type:X`      | concept type                     | `type`                         |
+| `tier:X`      | trust tier                       | `human-reviewed`, `machine-confirmed`, `unverified` |
+| `status:X`    | lifecycle status                 | `status`                       |
+| `is:stale`    | stale on `today` (or `--today`)  | derived flag                   |
+| `is:broken`   | has broken outgoing links        | derived flag                   |
+| anything else | free text                        | fuzzy metadata match; body substring |
+
+```sh
+# Free text: fuzzy over ids/titles/tags/headings, grep-style body hits
+okf search --bundle ./company_knowledge "mileage"
+
+# Filters compose: stale, unreviewed concepts — an attention queue
+okf search --bundle ./company_knowledge "is:stale tier:unverified" --json
+
+# Pin staleness for deterministic output
+okf search --bundle ./company_knowledge "is:stale" --today 2026-12-01 --limit 50
+```
+
+Metadata hits print as `id [status] title` (heading hits indented beneath),
+body hits as `id:line  snippet…`, and `--json` emits
+`{ query, hits, body_hits }` for pipelines and agents.
+
 ### Link graph and discovery: links and graph
 
 ```sh
@@ -549,11 +590,10 @@ okf validate ./company_knowledge --json
 okf lint ./company_knowledge --json
 okf info ./company_knowledge --json
 okf trust ./company_knowledge --json
+okf search --bundle ./company_knowledge "is:stale tier:unverified" --json
 okf fmt ./company_knowledge --check --json
 okf diff ./bundle_v1 ./bundle_v2 --json
 ```
-
----
 
 ## CI/CD integration
 
@@ -617,7 +657,7 @@ the parsers, so a licence-clean dependency that still checks SQL is:
 
 ```toml
 [dependencies]
-okf = { version = "0.2", default-features = false, features = ["validator", "sql"] }
+okf = { version = "0.4", default-features = false, features = ["validator", "sql"] }
 ```
 
 Or, without any of the validator, `okf-core` alone for a zero-dependency

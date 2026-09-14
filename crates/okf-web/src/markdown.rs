@@ -11,7 +11,7 @@
 //!    dropped — pulldown's `unsafe` option stays off) intercepts
 //!    ` ```mermaid ` code blocks, emitting `<pre class="mermaid">` with the
 //!    escaped source as a render-failure/noscript fallback.
-//! 3. [`write_classed_html`] renders everything else, emitting a `md-*`
+//! 3. `write_classed_html` renders everything else, emitting a `md-*`
 //!    class on every element so the Tailwind-compiled stylesheet (whose
 //!    `source(none)` mode only defines classes named in `tailwind.css`)
 //!    styles markdown bodies through component classes, like the rest of
@@ -100,8 +100,9 @@ struct Intercept<'a, I> {
     has_shiki: bool,
     /// Headings with their injected ids, in document order.
     headings: Vec<(usize, String, String)>,
-    /// Slugs already used, for GitHub-style `-1` disambiguation.
-    used_slugs: std::collections::HashSet<String>,
+    /// GitHub-style slug disambiguation, shared with okf-core so index
+    /// anchors cannot drift from the emitted ids.
+    slug_allocator: okf_core::SlugAllocator,
 }
 
 impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
@@ -110,9 +111,9 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
             iter,
             queued: VecDeque::new(),
             has_mermaid: false,
-            has_shiki: false,
             headings: Vec::new(),
-            used_slugs: std::collections::HashSet::new(),
+            has_shiki: false,
+            slug_allocator: okf_core::SlugAllocator::default(),
         }
     }
 
@@ -129,8 +130,7 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
     /// own `isPlainLang`: `text`, `plain`, `txt`, and `plaintext` produce no
     /// tokens, so they render as the plain `<pre>` either way.
     fn is_highlightable(lang: &str) -> bool {
-        !lang.is_empty()
-            && !matches!(lang, "text" | "plain" | "txt" | "plaintext")
+        !lang.is_empty() && !matches!(lang, "text" | "plain" | "txt" | "plaintext")
     }
 
     /// Buffers a heading's events to compute its slug, then re-emits the
@@ -164,15 +164,7 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
                 other => buffer.push(other),
             }
         }
-        let mut slug = okf_core::markdown::heading_slug(&text);
-        let mut n: usize = 0;
-        while self.used_slugs.contains(&slug) && !slug.is_empty() {
-            n += 1;
-            slug = format!("{}-{n}", okf_core::markdown::heading_slug(&text));
-        }
-        if !slug.is_empty() {
-            self.used_slugs.insert(slug.clone());
-        }
+        let slug = self.slug_allocator.allocate(&text);
         self.headings.push((level as usize, text, slug.clone()));
         self.queued.extend(buffer);
         Event::Start(Tag::Heading {
@@ -677,7 +669,9 @@ mod tests {
         );
         assert!(rendered.has_shiki, "{}", rendered.html);
         assert!(
-            rendered.html.contains(r#"<code class="md-code language-rust">"#),
+            rendered
+                .html
+                .contains(r#"<code class="md-code language-rust">"#),
             "the boot's language harvest target: {}",
             rendered.html
         );

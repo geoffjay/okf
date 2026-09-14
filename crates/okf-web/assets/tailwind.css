@@ -304,7 +304,7 @@
   }
 
   .site-header .site-search {
-    @apply ml-auto;
+    @apply relative ml-auto;
   }
   .site-header .site-search input {
     @apply w-48 rounded-md px-2 py-1;
@@ -319,6 +319,29 @@
     @apply w-64;
     border-color: var(--link);
     outline: none;
+  }
+  /* The results dropdown: absolutely positioned under the input, panel
+     background and edge from the theme variables so light/dark both work. */
+  .site-search-results {
+    @apply absolute right-0 z-50 mt-1 max-h-96 w-[24rem] max-w-[90vw] overflow-y-auto rounded-md py-1;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.15);
+  }
+  .site-search-results .search-row {
+    @apply block truncate px-3 py-1 text-sm;
+    color: var(--ink);
+  }
+  .site-search-results .search-row:hover {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+  .site-search-results .search-row.selected,
+  .site-search-results .search-row.selected:hover {
+    background: color-mix(in oklab, var(--ink) 15%, transparent);
+  }
+  .site-search-results .search-row.body {
+    @apply whitespace-nowrap;
+    opacity: 0.85;
   }
 
   /* Theme toggle: styled like the menu button. Show the sun in dark mode

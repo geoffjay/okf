@@ -487,11 +487,23 @@ fn out_dir_is_created_when_missing() {
 fn nav_folders_are_titled_without_a_trailing_slash() {
     let b = TestBundle::new("nav-folders");
     b.write("index.md", "---\nokf_version: \"0.2\"\n---\n\n# Index\n");
-    b.write("log.md", "# Update Log\n\n## 2026-08-20\n* **Update**: init.\n");
+    b.write(
+        "log.md",
+        "# Update Log\n\n## 2026-08-20\n* **Update**: init.\n",
+    );
     // Folders whose labels come from the segment name.
-    b.write("foo-kebab/a.md", "---\ntype: Concept\ntitle: A\n---\n\n# A\n");
-    b.write("foo_snake/a.md", "---\ntype: Concept\ntitle: A\n---\n\n# A\n");
-    b.write("foo space/a.md", "---\ntype: Concept\ntitle: A\n---\n\n# A\n");
+    b.write(
+        "foo-kebab/a.md",
+        "---\ntype: Concept\ntitle: A\n---\n\n# A\n",
+    );
+    b.write(
+        "foo_snake/a.md",
+        "---\ntype: Concept\ntitle: A\n---\n\n# A\n",
+    );
+    b.write(
+        "foo space/a.md",
+        "---\ntype: Concept\ntitle: A\n---\n\n# A\n",
+    );
 
     run(&b, None);
     let dash = b.page("index.html");
@@ -517,7 +529,10 @@ fn nav_folders_are_titled_without_a_trailing_slash() {
 
     // The folder's own index page heading is the capitalized name, not "foo-kebab/".
     let dir_page = b.page("foo-kebab/index.html");
-    assert!(dir_page.contains("<h1>Foo Kebab</h1>"), "dir heading: {dir_page}");
+    assert!(
+        dir_page.contains("<h1>Foo Kebab</h1>"),
+        "dir heading: {dir_page}"
+    );
     assert!(
         dir_page.contains("<title>Foo Kebab</title>"),
         "dir title: {dir_page}"
@@ -595,4 +610,108 @@ fn nav_marks_the_current_page_active() {
         pol.contains(r#"<a class="dir active" href="../policies/index.html">Policies</a>"#),
         "directory link is active on its index page: {pol}"
     );
+}
+
+/// The search asset: index shape, XSS-escaped producer content, heading
+/// anchors that match the emitted ids, and lazy-load wiring in the header.
+#[test]
+fn search_index_asset_is_emitted_and_escaped() {
+    let b = fixture("search-index", false);
+    // A concept whose title would break out of a JS string if unescaped.
+    b.write(
+        "evil.md",
+        "---\ntype: Note\ntitle: \"</script><script>alert(1)</script>\"\n---\n\n# Evil\n",
+    );
+    run(&b, None);
+
+    let js = b.page("assets/search-index.js");
+    assert!(
+        js.starts_with("window.okfSearchIndex={"),
+        "index header: {js}"
+    );
+    // Every < is escaped, so the literal `</script>` sequence that would
+    // close an inline script tag can never occur in the file.
+    assert!(
+        js.contains(r"u003c/script>\u003cscript>alert(1)"),
+        "escaped < in title: {}",
+        &js[js.find("alert").map_or(0, |i| i.saturating_sub(80))..]
+    );
+    assert!(
+        !js.contains("</script>\""),
+        "no literal </script> anywhere the file could close a script tag: {js}"
+    );
+    // The client ships in the same file, after the index assignment.
+    assert!(js.contains("okf site search client"), "client appended");
+    // Bodies ride along for the client's substring search.
+    assert!(js.contains("reimbursed at approved rates"));
+}
+
+#[test]
+fn search_header_input_wires_the_lazy_boot() {
+    let b = fixture("search-header", false);
+    run(&b, None);
+
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"data-asset="assets/search-index.js""#),
+        "{dash}"
+    );
+    assert!(dash.contains("data-prefix=\"\""), "{dash}");
+    let travel = b.page("policies/travel.html");
+    assert!(
+        travel.contains(r#"data-asset="../assets/search-index.js""#),
+        "nested prefix: {travel}"
+    );
+    assert!(travel.contains(r#"data-prefix="../""#));
+    // The arming boot ships inline on every page.
+    assert!(dash.contains("input.dataset.armed"), "{dash}");
+}
+
+#[test]
+fn search_index_heading_anchors_match_emitted_ids() {
+    let b = fixture("search-anchors", false);
+    // Two same-text headings force -1 disambiguation, matching the writer.
+    b.write(
+        "dupes.md",
+        "---\ntype: Note\ntitle: Duplicate headings\n---\n\n\
+         # Rates\n\nFirst.\n\n## Rates\n\nSecond.\n",
+    );
+    run(&b, None);
+
+    let js = b.page("assets/search-index.js");
+    let idx = &js["window.okfSearchIndex=".len()..];
+    // Parse the JSON tail back out: cut at the `;` that ends the assignment.
+    let json = &idx[..idx.find(';').unwrap()];
+    let val: serde_json::Value = serde_json::from_str(json).unwrap();
+
+    // dupes.md: the writer emits id="rates" and id="rates-1".
+    let dupes = val["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "dupes")
+        .unwrap();
+    let anchors: Vec<&str> = dupes["headings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["anchor"].as_str().unwrap())
+        .collect();
+    assert_eq!(anchors, ["rates", "rates-1"]);
+
+    // The page's emitted ids agree with the index anchors.
+    let page = b.page("dupes.html");
+    assert!(page.contains("<h1 id=\"rates\""), "{page}");
+    assert!(page.contains("id=\"rates-1\""), "{page}");
+
+    // travel's heading also agrees.
+    let travel = val["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "policies/travel")
+        .unwrap();
+    assert_eq!(travel["headings"][0]["anchor"], "travel-policy");
+    let travel_page = b.page("policies/travel.html");
+    assert!(travel_page.contains("<h1 id=\"travel-policy\""));
 }
