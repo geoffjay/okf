@@ -371,12 +371,32 @@ impl NavNode {
                 @for (seg, child) in &self.children {
                     @let child_dir = if dir.is_empty() { seg.clone() } else { format!("{dir}/{seg}") };
                     li {
-                        a class="dir" href=(format!("{prefix}{child_dir}/index.html")) { (seg) "/" }
+                        a class="dir" href=(format!("{prefix}{child_dir}/index.html")) { (segment_title(seg)) }
                         (child.render(prefix, &child_dir))
                     }
                 }
             }
         }
+    }
+}
+
+/// Formats a directory segment into a display title: splits on `-`, `_`, and
+/// whitespace, then capitalizes the first letter of each word. `"foo-kebab"`
+/// becomes `"Foo Kebab"`; `"foo space"` becomes `"Foo Space"`.
+fn segment_title(seg: &str) -> String {
+    let mut words = Vec::new();
+    for part in seg.split(|c: char| c == '-' || c == '_' || c.is_whitespace()) {
+        if part.is_empty() {
+            continue;
+        }
+        let mut chars = part.chars();
+        let first = chars.next().unwrap_or_default().to_uppercase().to_string();
+        words.push(format!("{first}{}", chars.as_str()));
+    }
+    if words.is_empty() {
+        seg.to_string()
+    } else {
+        words.join(" ")
     }
 }
 

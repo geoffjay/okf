@@ -450,3 +450,36 @@ fn out_dir_is_created_when_missing() {
     assert!(out.join("index.html").is_file());
     let _ = Path::new(&b.root);
 }
+
+#[test]
+fn nav_folders_are_titled_without_a_trailing_slash() {
+    let b = TestBundle::new("nav-folders");
+    b.write("index.md", "---\nokf_version: \"0.2\"\n---\n\n# Index\n");
+    b.write("log.md", "# Update Log\n\n## 2026-08-20\n* **Update**: init.\n");
+    // Folders whose labels come from the segment name.
+    b.write("foo-kebab/a.md", "---\ntype: Concept\ntitle: A\n---\n\n# A\n");
+    b.write("foo_snake/a.md", "---\ntype: Concept\ntitle: A\n---\n\n# A\n");
+    b.write("foo space/a.md", "---\ntype: Concept\ntitle: A\n---\n\n# A\n");
+
+    run(&b, None);
+    let dash = b.page("index.html");
+
+    // Segment-derived labels: capitalized, delimiters become spaces, no `/`.
+    assert!(
+        dash.contains(r#"<a class="dir" href="foo-kebab/index.html">Foo Kebab</a>"#),
+        "kebab folder label: {dash}"
+    );
+    assert!(
+        dash.contains(r#"<a class="dir" href="foo_snake/index.html">Foo Snake</a>"#),
+        "snake folder label: {dash}"
+    );
+    assert!(
+        dash.contains(r#"<a class="dir" href="foo space/index.html">Foo Space</a>"#),
+        "space folder label: {dash}"
+    );
+    // The old trailing-slash rendering is gone.
+    assert!(
+        !dash.contains("/</a>"),
+        "no folder link should end in a slash: {dash}"
+    );
+}
