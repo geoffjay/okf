@@ -331,13 +331,13 @@ pub fn nav_tree(bundle: &Bundle, prefix: &str) -> Markup {
     let mut root = NavNode::default();
     for concept in bundle.concepts() {
         let mut segments = concept.id.segments().to_vec();
-        let name = segments.pop().unwrap_or_default();
+        segments.pop(); // drop the leaf name; the chain that remains is directories
         let mut node = &mut root;
         for seg in &segments {
             node = node.children.entry(seg.clone()).or_default();
         }
         node.leaves
-            .push((name, concept.id.clone(), concept.display_title()));
+            .push((concept.id.clone(), concept.display_title()));
     }
     html! {
         div class="special" {
@@ -352,7 +352,7 @@ pub fn nav_tree(bundle: &Bundle, prefix: &str) -> Markup {
 #[derive(Default)]
 struct NavNode {
     children: BTreeMap<String, Self>,
-    leaves: Vec<(String, ConceptId, String)>,
+    leaves: Vec<(ConceptId, String)>,
 }
 
 impl NavNode {
@@ -361,10 +361,9 @@ impl NavNode {
     fn render(&self, prefix: &str, dir: &str) -> Markup {
         html! {
             ul {
-                @for (name, id, title) in &self.leaves {
+                @for (id, title) in &self.leaves {
                     li {
                         a href=(format!("{prefix}{id}.html")) { (title) }
-                        " " code { (name) }
                     }
                 }
                 @for (seg, child) in &self.children {
