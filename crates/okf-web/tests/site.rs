@@ -482,4 +482,12 @@ fn nav_folders_are_titled_without_a_trailing_slash() {
         !dash.contains("/</a>"),
         "no folder link should end in a slash: {dash}"
     );
+
+    // The folder's own index page heading is the capitalized name, not "foo-kebab/".
+    let dir_page = b.page("foo-kebab/index.html");
+    assert!(dir_page.contains("<h1>Foo Kebab</h1>"), "dir heading: {dir_page}");
+    assert!(
+        dir_page.contains("<title>Foo Kebab</title>"),
+        "dir title: {dir_page}"
+    );
 }

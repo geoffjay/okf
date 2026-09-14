@@ -963,7 +963,7 @@ pub fn directory_page(bundle: &Bundle, dir: &ConceptId) -> SitePage {
 
     SitePage {
         rel_path: PagePath::Directory(dir.clone()),
-        title: format!("{dir}/"),
+        title: segment_title(dir.name()),
         body_html: body,
         has_mermaid: false,
         meta_rows: Vec::new(),
