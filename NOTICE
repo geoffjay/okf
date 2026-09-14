@@ -38,5 +38,19 @@ dependency of any okf crate. mermaid.js is distributed under the MIT License:
 The full MIT license text is retained alongside the asset in
 `crates/okf-web/assets/vendor/mermaid-LICENSE.txt`.
 
+The `okf-web` crate also vendors a shiki syntax-highlighter bundle
+(`crates/okf-web/assets/vendor/shiki.min.js`, an offline esbuild IIFE of the
+npm `shiki` package with inlined Oniguruma WASM), written into generated
+sites so fenced code blocks highlight client-side. shiki is distributed
+under the MIT License:
+
+    shiki
+    Copyright (c) 2021 Pine Wu
+    Copyright (c) 2023 Anthony Fu
+    https://github.com/shikijs/shiki
+
+The full MIT license text is retained alongside the asset in
+`crates/okf-web/assets/vendor/shiki-LICENSE.txt`.
+
 OKF and Google Cloud are trademarks of Google LLC. This crate is an independent
 implementation and is not affiliated with, endorsed by, or sponsored by Google.

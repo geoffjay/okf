@@ -28,6 +28,10 @@
 //!   page so the site fetches no external CSS.
 //! - `assets/mermaid.min.js`, a vendored mermaid build, written only when some
 //!   page carries a diagram, so clean bundles never download it.
+//! - `assets/shiki.min.js`, a vendored shiki highlighter bundle, written only
+//!   when some page carries a fenced code block with a language tag; pages
+//!   highlight client-side in GitHub light/dark themes driven by the site's
+//!   theme classes.
 //!
 //! ## Security posture
 //!
@@ -60,6 +64,11 @@ use std::path::PathBuf;
 
 /// The vendored mermaid.min.js (12.0.0, MIT; see `assets/vendor/README.md`).
 const MERMAID_JS: &[u8] = include_bytes!("../assets/vendor/mermaid.min.js");
+
+/// The vendored shiki.min.js (3.23.0, MIT; see `assets/vendor/README.md`) —
+/// an esbuild IIFE of shiki's Oniguruma engine with inlined WASM and every
+/// bundled language, exposing `window.okfShiki { load, highlight }`.
+const SHIKI_JS: &[u8] = include_bytes!("../assets/vendor/shiki.min.js");
 
 /// Options for one `generate` run.
 #[derive(Clone, Debug)]
@@ -105,6 +114,9 @@ pub struct SiteSummary {
     pub pages: usize,
     /// Concepts whose body carries at least one mermaid block.
     pub mermaid_pages: usize,
+    /// Concepts whose body carries at least one fenced code block with a
+    /// language tag — the pages shiki highlights.
+    pub code_pages: usize,
 }
 
 /// Generates the site for the bundle at `options.root` into `options.out_dir`.
@@ -152,10 +164,16 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         .filter(|p| p.has_mermaid)
         .filter(|p| matches!(p.rel_path, PagePath::Concept(_)))
         .count();
+    let code_pages = pages
+        .iter()
+        .filter(|p| p.has_shiki)
+        .filter(|p| matches!(p.rel_path, PagePath::Concept(_)))
+        .count();
 
-    // The mermaid asset ships only when some page embeds a diagram, so clean
-    // bundles never download it.
+    // The assets ship only when some page needs them, so clean bundles
+    // never download what they do not use.
     let bundle_has_mermaid = pages.iter().any(|p| p.has_mermaid);
+    let bundle_has_code = pages.iter().any(|p| p.has_shiki);
 
     fs::create_dir_all(&out_dir).map_err(|e| SiteError::Io(e, out_dir.clone()))?;
 
@@ -163,17 +181,27 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         write_page(page, &bundle, &out_dir, bundle_has_mermaid, &site_title)?;
     }
 
-    if bundle_has_mermaid {
+    if bundle_has_mermaid || bundle_has_code {
         let assets_dir = out_dir.join("assets");
         fs::create_dir_all(&assets_dir).map_err(|e| SiteError::Io(e, assets_dir.clone()))?;
-        let mermaid_path = assets_dir.join("mermaid.min.js");
-        fs::write(&mermaid_path, MERMAID_JS).map_err(|e| SiteError::Io(e, mermaid_path.clone()))?;
+        if bundle_has_mermaid {
+            let mermaid_path = assets_dir.join("mermaid.min.js");
+            fs::write(&mermaid_path, MERMAID_JS)
+                .map_err(|e| SiteError::Io(e, mermaid_path.clone()))?;
+        }
+        if bundle_has_code {
+            let shiki_path = assets_dir.join("shiki.min.js");
+            fs::write(&shiki_path, SHIKI_JS)
+                .map_err(|e| SiteError::Io(e, shiki_path.clone()))?;
+        }
     }
 
     Ok(SiteSummary {
         pages: pages.len(),
         mermaid_pages,
+        code_pages,
     })
+
 }
 
 /// Where a generated page lives in the output tree.

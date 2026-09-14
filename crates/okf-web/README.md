@@ -21,11 +21,18 @@ What it emits:
 - Rendered mermaid diagrams: ` ```mermaid ` blocks become client-side
   diagrams via a vendored `mermaid.min.js` (MIT; see
   `assets/vendor/README.md`), shipped only when some page has a diagram.
+- Syntax-highlighted code blocks: fenced blocks with a language tag are
+  highlighted client-side by a vendored `shiki.min.js` (MIT; see
+  `assets/vendor/README.md`) — every shiki language, GitHub light/dark
+  themes, colors as CSS variables so the theme toggle is free — shipped
+  only when some page has code. The escaped source stays in the `<pre>`
+  until the highlight swaps it in, so no-JS degrades gracefully.
 - Frontmatter panels with trust/status/staleness badges, backlinks, sources
   with OKF footnote→source attribution, headings TOC, and validator/lint
   findings — everything the studio Explorer inspector shows.
 - A single inline stylesheet compiled from Tailwind CSS v4, so pages fetch no
-  external CSS (mermaid is the only external asset, and only on diagram pages).
+  external CSS (mermaid and shiki are the only external assets, and only on
+  pages that use them).
 
 Security: no raw HTML passthrough from markdown bodies (pulldown-cmark's
 `unsafe` stays off), maud escapes every frontmatter interpolation, and

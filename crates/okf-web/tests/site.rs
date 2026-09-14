@@ -137,21 +137,51 @@ fn mermaid_pages_ship_the_asset_clean_pages_do_not() {
 }
 
 #[test]
-fn concept_page_has_mermaid_script_and_escaped_source() {
-    let b = fixture("script", true);
-    run(&b, None);
-    let page = b.page("policies/travel.html");
+fn code_pages_ship_shiki_and_load_it_only_on_code_pages() {
+    let b = fixture("shiki", false);
+    // The fixture's travel page has no code fences; add one.
+    b.write(
+        "policies/travel.md",
+        "---\ntype: Policy\ntitle: Travel policy\n---\n\n\
+             # Travel policy\n\n\
+             ```rust\nfn main() {}\n```\n",
+    );
+    let summary = run(&b, None);
+    assert_eq!(summary.code_pages, 1, "one concept page with a code fence");
+    assert!(b.site().join("assets/shiki.min.js").is_file());
+
+    let code_page = b.page("policies/travel.html");
     assert!(
-        page.contains(r#"<pre class="mermaid">flowchart LR"#),
-        "diagram source in the pre fallback"
+        code_page.contains(r#"<script src="../assets/shiki.min.js">"#),
+        "code page loads the vendored shiki with the depth-correct path"
     );
     assert!(
-        page.contains(r#"<script src="../assets/mermaid.min.js">"#),
-        "diagram page loads the vendored asset with the depth-correct path"
+        code_page.contains("window.okfShiki"),
+        "code page carries the shiki boot"
     );
     assert!(
-        page.contains("mermaid.run("),
-        "diagram page bootstraps mermaid"
+        code_page.contains(r#"<code class="md-code language-rust">"#),
+        "the escaped source stays as the no-JS fallback: {code_page}"
+    );
+
+    // A page without code fences loads neither shiki nor its boot.
+    let plain_page = b.page("policies/pto.html");
+    assert!(
+        !plain_page.contains("shiki.min.js"),
+        "plain page must not load shiki"
+    );
+    assert!(
+        !plain_page.contains("okfShiki"),
+        "plain page must not carry the boot"
+    );
+
+    // A bundle with no code fences at all ships no shiki asset.
+    let clean = fixture("shiki-clean", false);
+    let clean_summary = run(&clean, None);
+    assert_eq!(clean_summary.code_pages, 0);
+    assert!(
+        !clean.site().join("assets/shiki.min.js").is_file(),
+        "clean bundle ships no shiki"
     );
 }
 

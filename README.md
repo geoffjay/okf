@@ -187,12 +187,17 @@ okf site . --today 2026-07-01  # pin staleness for reproducible builds
   base path.
 - **Tailwind-styled, zero external CSS.** Pages inline one stylesheet compiled
   from [Tailwind CSS v4](https://tailwindcss.com); the site loads no external
-  stylesheet (mermaid.js is the only external asset, and only when a page has a
-  diagram).
+  stylesheet (the vendored mermaid.js and shiki.js are the only external
+  assets, each only on pages that use them).
 - **Rendered diagrams.** Fenced ` ```mermaid ` blocks render client-side via a
   vendored [mermaid.js](https://mermaid.js.org/) (shipped only when a page has
   a diagram). Diagram source is escaped into a `<pre>` fallback that survives
   render failures and no-JS.
+- **Syntax-highlighted code.** Fenced blocks with a language tag highlight
+  client-side via a vendored [shiki](https://shiki.style) — every shiki
+  language, GitHub light/dark themes resolved as CSS variables (theme
+  toggling is free), shipped only when a page has code, with the escaped
+  source kept as the no-JS fallback.
 - **Parity panels.** Every concept page shows what the studio inspector does:
   trust/status/staleness badges, backlinks, sources with footnote→source
   attribution, a headings table of contents, and validator/lint findings.
@@ -714,7 +719,7 @@ checked.
 This repository is structured as a multi-crate Rust workspace:
 
 | Crate | Description | Documentation |
-|-------|-------------|---------------|
+| [`okf-web`](https://crates.io/crates/okf-web) | The `okf site` static site generator: maud templates, pulldown-cmark rendering, Tailwind v4 styling, vendored mermaid.js diagrams, and vendored shiki code highlighting — a deployable HTML view of a bundle. | [![docs.rs](https://img.shields.io/docsrs/okf-web)](https://docs.rs/okf-web) |
 | [`okf`](https://crates.io/crates/okf) | CLI binary and re-exports of all core and validator APIs. | [![docs.rs](https://img.shields.io/docsrs/okf)](https://docs.rs/okf) |
 | [`okf-core`](https://crates.io/crates/okf-core) | Pure-Rust OKF engine (YAML subset parser, AST, link graphs, diff, fix engine). | [![docs.rs](https://img.shields.io/docsrs/okf-core)](https://docs.rs/okf-core) |
 | [`okf-validator`](https://crates.io/crates/okf-validator) | Conformance validator, multi-language syntax checker, and 13 opinionated linting rules. | [![docs.rs](https://img.shields.io/docsrs/okf-validator)](https://docs.rs/okf-validator) |

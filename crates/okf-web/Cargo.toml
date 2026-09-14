@@ -1,6 +1,6 @@
 [package]
 name = "okf-web"
-description = "okf web: a pure-Rust static site generator for Open Knowledge Format (OKF) bundles — maud templates, pulldown-cmark rendering, Tailwind v4 styling, and vendored mermaid.js for diagram pages, with no WASM and no server."
+description = "okf web: a pure-Rust static site generator for Open Knowledge Format (OKF) bundles — maud templates, pulldown-cmark rendering, Tailwind v4 styling, vendored mermaid.js for diagram pages and shiki for code highlighting, with no WASM and no server."
 documentation = "https://docs.rs/okf-web"
 readme = "README.md"
 version.workspace = true

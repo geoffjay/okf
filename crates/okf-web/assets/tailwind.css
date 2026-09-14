@@ -132,6 +132,30 @@
     padding: 0;
   }
 
+  /*
+   * Shiki highlight: the vendored bundle emits token colors as
+   * --shiki-light/--shiki-dark CSS variables (defaultColor: false), so
+   * resolving them here is the whole theme story — a theme flip costs
+   * nothing. The selector ladder mirrors the theme system above: the
+   * .light class and system-light default resolve the light variables;
+   * .dark and system-dark resolve the dark ones. .shiki lives on the <pre>
+   * the boot script swapped in; inline <code> never carries it.
+   */
+  .shiki,
+  .shiki span {
+    color: var(--shiki-light);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light):not(.dark) .shiki,
+    :root:not(.light):not(.dark) .shiki span {
+      color: var(--shiki-dark);
+    }
+  }
+  :root.dark .shiki,
+  :root.dark .shiki span {
+    color: var(--shiki-dark);
+  }
+
   table {
     border-collapse: collapse;
   }

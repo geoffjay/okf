@@ -23,6 +23,9 @@ pub struct SitePage {
     pub body_html: String,
     /// Whether the page carries `<pre class="mermaid">` content.
     pub has_mermaid: bool,
+    /// Whether the page carries a fenced code block with a language tag —
+    /// the pages the shiki bootstrap highlights.
+    pub has_shiki: bool,
     /// Extra `<link>`/`<meta>` rows for the frontmatter panel, as
     /// `(label, rendered-value HTML)`; the values are maud-escaped here.
     pub meta_rows: Vec<(String, Markup)>,
@@ -105,7 +108,8 @@ pub fn write_page(
         fs::create_dir_all(parent).map_err(|e| crate::SiteError::Io(e, parent.to_path_buf()))?;
     }
     let document = layout(page, bundle, bundle_has_mermaid, site_title);
-    fs::write(&dest, document.into_string()).map_err(|e| crate::SiteError::Io(e, dest.clone()))
+    fs::write(&dest, document.into_string())
+        .map_err(|e| crate::SiteError::Io(e, dest.clone()))
 }
 
 /// The full HTML document for one page.
@@ -115,11 +119,13 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
         title,
         body_html,
         has_mermaid,
+        has_shiki,
         meta_rows,
     } = page;
     let prefix = prefix_for(rel_path);
     let current_rel = rel_path.rel();
     let wants_mermaid = *has_mermaid && bundle_has_mermaid;
+    let wants_shiki = *has_shiki;
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -186,6 +192,12 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                     // scripts also work over file:// (no CORS on modules).
                     script src=(format!("{prefix}assets/mermaid.min.js")) {}
                     script { (PreEscaped(mermaid_boot())) }
+                }
+                @if wants_shiki {
+                    // Same shape as the mermaid pair: the vendored IIFE sets
+                    // window.okfShiki, and the boot swaps highlighted HTML in.
+                    script src=(format!("{prefix}assets/shiki.min.js")) {}
+                    script { (PreEscaped(shiki_boot())) }
                 }
             }
         }
@@ -323,6 +335,53 @@ if (window.mermaid) {\
   });\
 }"
 }
+
+/// The shiki bootstrap, a classic inline script placed at the end of
+/// `<body>`, like the mermaid one. The writer emits every fenced block as
+/// `<pre class="md-pre"><code class="md-code language-X">escaped</code></pre>`;
+/// the boot harvests those languages (lowercased: fence info strings are
+/// case-insensitive, shiki's registry is not), registers them from the
+/// vendored bundle, and swaps each `<pre>` wholesale for shiki's
+/// dual-theme HTML — the vendored `highlight` already restyles the `<pre>`
+/// with the site's `md-pre` class. Colors travel as `--shiki-light`/
+/// `--shiki-dark` CSS variables, so the theme toggle needs no re-render
+/// here. The vendored bundle assigns `window.okfShikiReady` synchronously
+/// (a promise; `window.okfShiki` appears only after the inlined-WASM
+/// highlighter initializes), so the boot chains on that instead of
+/// guarding on `okfShiki` — a synchronous guard would race the WASM init
+/// and lose. The escaped source stays until the swap, so no-JS and load
+/// failures degrade to the plain monospace block; unknown languages keep
+/// the `<pre>` as-is: a lang the bundle does not carry renders unhighlighted,
+/// never broken.
+const fn shiki_boot() -> &'static str {
+    "\
+if (window.okfShikiReady) {\
+  var langOf = function (code) {\
+    for (var i = 0; i < code.classList.length; i++) {\
+      var m = /^language-(.+)$/.exec(code.classList[i]);\
+      if (m) return m[1].toLowerCase();\
+    }\
+    return null;\
+  };\
+  var langs = [];\
+  document.querySelectorAll('article pre.md-pre > code').forEach(function (c) {\
+    var lang = langOf(c);\
+    if (lang && langs.indexOf(lang) === -1) langs.push(lang);\
+  });\
+  window.okfShikiReady.then(function () {\
+    return window.okfShiki.load(langs);\
+  }).then(function () {\
+    document.querySelectorAll('article pre.md-pre > code').forEach(function (c) {\
+      var lang = langOf(c);\
+      if (lang === null) return;\
+      var html = window.okfShiki.highlight(c.textContent, lang);\
+      if (html === null) return;\
+      c.parentNode.outerHTML = html;\
+    });\
+  });\
+}"
+}
+
 
 /// The nav tree: the bundle's directory structure with links to every
 /// concept page, plus the special pages.
@@ -643,6 +702,7 @@ pub fn concept_page(
         title: concept.display_title(),
         body_html: body.html,
         has_mermaid: body.has_mermaid,
+        has_shiki: body.has_shiki,
         meta_rows: vec![("Overview".to_string(), meta_html)],
     }
 }
@@ -831,6 +891,7 @@ pub fn dashboard_page(
         title: format!("Dashboard — {} concept(s)", bundle.len()),
         body_html: body.into_string(),
         has_mermaid: false,
+        has_shiki: false,
         meta_rows: Vec::new(),
     }
 }
@@ -898,6 +959,7 @@ pub fn graph_page(bundle: &Bundle) -> SitePage {
         title: "Cross-link graph".to_string(),
         body_html: body.into_string(),
         has_mermaid: true,
+        has_shiki: false,
         meta_rows: Vec::new(),
     }
 }
@@ -969,6 +1031,7 @@ pub fn directory_page(bundle: &Bundle, dir: &ConceptId) -> SitePage {
         title: segment_title(dir.name()),
         body_html: body,
         has_mermaid: false,
+        has_shiki: false,
         meta_rows: Vec::new(),
     }
 }

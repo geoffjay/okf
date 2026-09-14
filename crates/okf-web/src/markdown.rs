@@ -29,6 +29,9 @@ pub struct RenderedBody {
     pub html: String,
     /// Whether at least one mermaid block was intercepted.
     pub has_mermaid: bool,
+    /// Whether at least one fenced code block carries a language tag —
+    /// the pages the shiki bootstrap highlights.
+    pub has_shiki: bool,
     /// Body headings with the ids injected into the HTML, for the TOC:
     /// `(level, text, id)`.
     pub headings: Vec<(usize, String, String)>,
@@ -75,6 +78,7 @@ pub fn render(
     RenderedBody {
         html: html_out,
         has_mermaid: intercept.has_mermaid,
+        has_shiki: intercept.has_shiki,
         headings: intercept.headings,
     }
 }
@@ -92,6 +96,8 @@ struct Intercept<'a, I> {
     queued: VecDeque<Event<'a>>,
     /// Whether any mermaid block was seen.
     has_mermaid: bool,
+    /// Whether any fenced code block with a language tag was seen.
+    has_shiki: bool,
     /// Headings with their injected ids, in document order.
     headings: Vec<(usize, String, String)>,
     /// Slugs already used, for GitHub-style `-1` disambiguation.
@@ -104,6 +110,7 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
             iter,
             queued: VecDeque::new(),
             has_mermaid: false,
+            has_shiki: false,
             headings: Vec::new(),
             used_slugs: std::collections::HashSet::new(),
         }
@@ -116,6 +123,14 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
             .next()
             .unwrap_or("")
             .eq_ignore_ascii_case("mermaid"))
+    }
+
+    /// Whether a fence language is worth loading shiki for. Mirrors shiki's
+    /// own `isPlainLang`: `text`, `plain`, `txt`, and `plaintext` produce no
+    /// tokens, so they render as the plain `<pre>` either way.
+    fn is_highlightable(lang: &str) -> bool {
+        !lang.is_empty()
+            && !matches!(lang, "text" | "plain" | "txt" | "plaintext")
     }
 
     /// Buffers a heading's events to compute its slug, then re-emits the
@@ -195,6 +210,17 @@ impl<'a, I: Iterator<Item = Event<'a>>> Iterator for Intercept<'a, I> {
                 Some(Event::Html(
                     format!(r#"<pre class="mermaid">{}</pre>"#, escape_pre(&source)).into(),
                 ))
+            }
+            // A fenced block with a highlightable language tag is shiki's
+            // (mermaid blocks were intercepted above; indented blocks and
+            // bare fences carry no language). Shiki's own plain-language
+            // list is excluded — `text`/`plain` fences render no tokens,
+            // so pages carrying only those never load the 9.6 MB bundle.
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info)))
+                if Self::is_highlightable(info.split(' ').next().unwrap_or("")) =>
+            {
+                self.has_shiki = true;
+                Some(Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))))
             }
             Event::Start(tag @ Tag::Heading { .. }) => Some(self.inject_heading_id(tag)),
             other => Some(other),
@@ -634,5 +660,63 @@ mod tests {
             rendered.html
         );
         assert!(rendered.html.contains("index.html"), "{}", rendered.html);
+    }
+
+    #[test]
+    fn has_shiki_marks_fenced_blocks_with_a_language() {
+        // A language-tagged fence: highlighted by shiki.
+        let body = "```rust\nfn main() {}\n```";
+        let bundle = bundle_with(body);
+        let id = ConceptId::parse("doc").unwrap();
+        let rendered = render(
+            &bundle,
+            &id,
+            &bundle.get(&id).unwrap().document.body,
+            "",
+            &out_of,
+        );
+        assert!(rendered.has_shiki, "{}", rendered.html);
+        assert!(
+            rendered.html.contains(r#"<code class="md-code language-rust">"#),
+            "the boot's language harvest target: {}",
+            rendered.html
+        );
+
+        // Mermaid, indented, and bare fences carry nothing to highlight.
+        for body in [
+            "```mermaid\nflowchart LR\n  A --> B\n```",
+            "    indented code",
+            "```\nbare fence\n```",
+            "plain prose, no fences",
+        ] {
+            let bundle = bundle_with(body);
+            let rendered = render(
+                &bundle,
+                &id,
+                &bundle.get(&id).unwrap().document.body,
+                "",
+                &out_of,
+            );
+            assert!(!rendered.has_shiki, "{body}");
+        }
+
+        // Shiki's plain-language list never trips the flag: those fences
+        // produce no tokens, so the page must not load the bundle.
+        for body in [
+            "```text\nplain text fence\n```",
+            "```plain\nplain fence\n```",
+            "```txt\ntxt fence\n```",
+            "```plaintext\nplaintext fence\n```",
+        ] {
+            let bundle = bundle_with(body);
+            let rendered = render(
+                &bundle,
+                &id,
+                &bundle.get(&id).unwrap().document.body,
+                "",
+                &out_of,
+            );
+            assert!(!rendered.has_shiki, "{body}");
+        }
     }
 }

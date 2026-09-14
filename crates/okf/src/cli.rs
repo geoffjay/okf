@@ -168,7 +168,7 @@ pub enum Commands {
     /// Open the interactive terminal studio for a bundle
     #[cfg(feature = "studio")]
     Studio(StudioArgs),
-    /// Generate a static HTML site for a bundle (maud + vendored mermaid)
+    /// Generate a static HTML site for a bundle (maud + vendored mermaid/shiki)
     #[cfg(feature = "site")]
     Site(SiteArgs),
 }
@@ -834,6 +834,12 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
         println!(
             "  {} diagram page(s); mermaid.js vendored under assets/",
             summary.mermaid_pages
+        );
+    }
+    if summary.code_pages > 0 {
+        println!(
+            "  {} code page(s); shiki.js vendored under assets/",
+            summary.code_pages
         );
     }
     Ok(ExitCode::SUCCESS)
