@@ -535,3 +535,34 @@ fn site_title_lives_in_the_header_and_is_configurable() {
         "custom title with prefix on nested page: {travel}"
     );
 }
+
+#[test]
+fn nav_marks_the_current_page_active() {
+    let b = fixture("nav-active", false);
+    run(&b, None);
+
+    // Concept page: its own leaf link is active; the dashboard link is not.
+    let travel = b.page("policies/travel.html");
+    assert!(
+        travel.contains(r#"<a class="active" href="../policies/travel.html">Travel policy</a>"#),
+        "current concept is active: {travel}"
+    );
+    assert!(
+        travel.contains(r#"<a href="../index.html">Dashboard</a>"#),
+        "dashboard is not active on a concept page: {travel}"
+    );
+
+    // Dashboard page: the Dashboard special link is active.
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"<a class="active" href="index.html">Dashboard</a>"#),
+        "dashboard link is active on the dashboard: {dash}"
+    );
+
+    // Directory index page: the folder's own dir link is active.
+    let pol = b.page("policies/index.html");
+    assert!(
+        pol.contains(r#"<a class="dir active" href="../policies/index.html">Policies</a>"#),
+        "directory link is active on its index page: {pol}"
+    );
+}

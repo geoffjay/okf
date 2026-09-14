@@ -358,13 +358,41 @@
     .special a,
     li a {
       @apply block no-underline;
-      padding: 1px 0;
+      /* Inactive items are a muted ink — mixing toward the surface dims them
+         (darker in dark mode, lighter in light mode). The active page is full
+         ink (brightest/lightest), and hovering brightens toward it. Text is
+         body ink, never link blue; roomy vertical spacing. */
+      color: color-mix(in oklab, var(--ink) 75%, var(--surface));
+      padding: 0.4rem 0;
+    }
+    .special a:hover,
+    li a:hover,
+    .special a.active,
+    li a.active {
+      color: var(--ink);
+    }
+
+    /* The left rule lives only on nested items; the top-level entries
+       (Dashboard, Graph, and the root concept/directory links) sit flush with
+       no border. Thin/faint when inactive, thick full-ink when active, and
+       lightened on hover. */
+    ul ul a {
+      border-left: 2px solid var(--edge);
+      padding-left: 0.75rem;
+    }
+    ul ul a:hover {
+      border-left-color: color-mix(in oklab, var(--ink) 50%, var(--edge));
+    }
+    ul ul a.active {
+      border-left-width: 2px;
+      border-left-color: var(--ink);
+      padding-left: calc(0.75rem - 1px); /* absorb the +1px border so text stays put */
     }
     li {
       @apply list-none;
     }
     ul {
-      @apply m-0 pl-4;
+      @apply m-0;
     }
     & > ul {
       @apply pl-0;

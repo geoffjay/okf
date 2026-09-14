@@ -118,6 +118,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
         meta_rows,
     } = page;
     let prefix = prefix_for(rel_path);
+    let current_rel = rel_path.rel();
     let wants_mermaid = *has_mermaid && bundle_has_mermaid;
     html! {
         (DOCTYPE)
@@ -162,7 +163,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                 }
                 div class="layout" {
                     nav id="site-nav" class="tree" aria-label="bundle contents" {
-                        (nav_tree(bundle, &prefix))
+                        (nav_tree(bundle, &prefix, &current_rel))
                     }
                     main {
                         h1 { (title) }
@@ -326,8 +327,10 @@ if (window.mermaid) {\
 /// The nav tree: the bundle's directory structure with links to every
 /// concept page, plus the special pages.
 #[must_use]
-pub fn nav_tree(bundle: &Bundle, prefix: &str) -> Markup {
-    // Build a nested tree from concept ids, then render as nested <ul>.
+pub fn nav_tree(bundle: &Bundle, prefix: &str, current_rel: &str) -> Markup {
+    // Build a nested tree from concept ids, then render as nested <ul>. Each
+    // link is marked `.active` when its target matches the current page's
+    // root-relative path (`PagePath::rel`), which is the href minus `prefix`.
     let mut root = NavNode::default();
     for concept in bundle.concepts() {
         let mut segments = concept.id.segments().to_vec();
@@ -341,10 +344,10 @@ pub fn nav_tree(bundle: &Bundle, prefix: &str) -> Markup {
     }
     html! {
         div class="special" {
-            a href=(format!("{prefix}index.html")) { "Dashboard" }
-            a href=(format!("{prefix}__okf/graph.html")) { "Graph" }
+            a class=[(current_rel == "index.html").then_some("active")] href=(format!("{prefix}index.html")) { "Dashboard" }
+            a class=[(current_rel == "__okf/graph.html").then_some("active")] href=(format!("{prefix}__okf/graph.html")) { "Graph" }
         }
-        (root.render(prefix, ""))
+        (root.render(prefix, "", current_rel))
     }
 }
 
@@ -358,19 +361,21 @@ struct NavNode {
 impl NavNode {
     /// `prefix` is the page's `../`-chain to the site root; `dir` is this
     /// node's `/`-joined path from the bundle root (empty at the top).
-    fn render(&self, prefix: &str, dir: &str) -> Markup {
+    fn render(&self, prefix: &str, dir: &str, current_rel: &str) -> Markup {
         html! {
             ul {
                 @for (id, title) in &self.leaves {
+                    @let active = format!("{id}.html") == current_rel;
                     li {
-                        a href=(format!("{prefix}{id}.html")) { (title) }
+                        a class=[active.then_some("active")] href=(format!("{prefix}{id}.html")) { (title) }
                     }
                 }
                 @for (seg, child) in &self.children {
                     @let child_dir = if dir.is_empty() { seg.clone() } else { format!("{dir}/{seg}") };
+                    @let active = format!("{child_dir}/index.html") == current_rel;
                     li {
-                        a class="dir" href=(format!("{prefix}{child_dir}/index.html")) { (segment_title(seg)) }
-                        (child.render(prefix, &child_dir))
+                        a class=(if active { "dir active" } else { "dir" }) href=(format!("{prefix}{child_dir}/index.html")) { (segment_title(seg)) }
+                        (child.render(prefix, &child_dir, current_rel))
                     }
                 }
             }
