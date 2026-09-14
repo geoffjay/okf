@@ -30,7 +30,7 @@ sources:
 
 Context: extend the okf toolkit with a static site view of a bundle. Primary
 driver: view rendered content — mermaid diagrams — not terminal text. See
-[the implementation plan](../../plans/okf_web_plan.md) for how this executes.
+[the implementation plan](../plans/okf_web_plan.md) for how this executes.
 
 ## Naming: okf-web
 

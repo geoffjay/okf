@@ -39,7 +39,7 @@ any static host (GitHub Pages included), no server, no WASM.
 
 The full decision trail — why not okf-studio as a dependency, why not
 Yew/Leptos/Dioxus/Topcoat, link-rewriting and escaping strategy — is recorded
-in [Decision: okf-site vs okf-web naming and dependency choice](../architecture/okf_web_static_site.md).
+in [Decision: okf-site vs okf-web naming and dependency choice](../decisions/okf_web_static_site.md).
 
 ## Scope
 

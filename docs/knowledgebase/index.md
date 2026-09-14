@@ -49,9 +49,9 @@ to touch the KB on every edit.
 
 # Subdirectories
 
-* [architecture](architecture/index.md) - Decision record on naming the static-site crate okf-web vs okf-site, depending on okf-core instead of okf-studio, and rejecting WASM frameworks in favor of a build-time pipeline.
+* [architecture](architecture/index.md) - Crate-level architecture of the okf project: the okf-core model, its consumers, the CLI surface, and the site generator pipeline, with mermaid diagrams.
 * [concepts](concepts/index.md) - Concepts: what okf is and how it is structured. _(empty)_
-* [decisions](decisions/index.md) - Decisions and their rationale. _(empty)_
+* [decisions](decisions/index.md) - Decisions and their rationale: naming the static-site crate okf-web vs okf-site, depending on okf-core instead of okf-studio, and rejecting WASM frameworks in favor of a build-time pipeline.
 * [patterns](patterns/index.md) - Recurring conventions and patterns. _(empty)_
 * [plans](plans/index.md) - Plan for okf-web, the static site generator crate: pure-Rust build pipeline over okf-core and okf-validator, maud templates, pulldown-cmark rendering, mermaid.js vendored as an asset, and no WASM framework.
 * [references](references/index.md) - External sources and specs referenced by this knowledge base, including the OKF spec.

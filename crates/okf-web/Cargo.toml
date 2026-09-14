@@ -18,7 +18,7 @@ workspace = true
 # maud (compile-time html! templates, zero runtime) and pulldown-cmark
 # (event-stream markdown rendering) are the only external dependencies beyond
 # okf-core/okf-validator; the workspace's minimal-dependency ethos rules out
-# anything heavier. See docs/knowledgebase/architecture/okf_web_static_site.md.
+# anything heavier. See docs/knowledgebase/decisions/okf_web_static_site.md.
 [dependencies]
 okf-core.workspace = true
 okf-validator.workspace = true

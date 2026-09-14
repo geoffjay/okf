@@ -39,5 +39,5 @@ it embeds the committed `site.css` at build time.
 
 This crate is a library with a single entry point (`okf_web::generate`); the
 `okf` binary's `site` subcommand is a thin wrapper around it. See
-`docs/knowledgebase/architecture/okf_web_static_site.md` in the repository
+`docs/knowledgebase/decisions/okf_web_static_site.md` in the repository
 for the design record.

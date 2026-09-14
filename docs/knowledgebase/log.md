@@ -1,5 +1,8 @@
 # Log
 
+## 2026-09-13
+* **Reorganization**: Moved the [okf-site vs okf-web decision record](decisions/okf_web_static_site.md) from `architecture/` to `decisions/` — it is a decision-plus-rationale ADR, and `architecture/` now holds only the descriptive workspace-architecture concept. Repointed its inbound links: the [plan](plans/okf_web_plan.md), `crates/okf-web/Cargo.toml`, and `crates/okf-web/README.md`. Also fixed the ADR's own `../plans/okf_web_plan.md` link (was `../../plans/`, which resolved outside the bundle) and the `plans/index.md` heading (`# Decision` → `# Plan`).
+
 ## 2026-09-11
 * **Creation**: Initialized OKF bundle.
 * **Scaffold**: Augmented the okf knowledge base at `docs/knowledgebase/` using the `okf-ify` skill. Added the agent policy section to `index.md` and the concept directories `concepts`, `decisions`, `patterns`, `references` (alongside the existing `architecture` and `plans`), plus [references/okf-spec.md](references/okf-spec.md). Wired Claude Code (`.claude/hooks/`), opencode (`.opencode/opencode.jsonc`) and oh-my-pi (`.omp/extensions/kb-hooks.ts`) to consult and update the KB. OKF v0.2 conformant.
