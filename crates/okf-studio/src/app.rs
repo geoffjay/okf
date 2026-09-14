@@ -1687,6 +1687,17 @@ impl App {
                 }
             }
             crate::markdown::FocusKind::Link { target, kind, .. } => {
+                // An in-document anchor (what `[[heading]]` expands to)
+                // jumps to its heading in the doc already on screen.
+                if *kind == okf_core::LinkKind::Anchor {
+                    let slug = target.trim_start_matches('#').to_string();
+                    if let Some(line) = Self::anchor_line(&rendered, &slug) {
+                        self.explorer.scroll = line;
+                    } else {
+                        self.toast(format!("✗ no heading matches `#{slug}`"), true);
+                    }
+                    return;
+                }
                 let link = okf_core::Link {
                     text: String::new(),
                     target: target.clone(),
@@ -1697,7 +1708,26 @@ impl App {
                     .into_iter()
                     .find(|t| snapshot.bundle.contains(t))
                 {
+                    let slug = link
+                        .anchor()
+                        .filter(|a| !a.is_empty())
+                        .map(ToString::to_string);
                     self.open_concept(&resolved);
+                    // A `foo.md#frag` link lands on the heading, mirroring
+                    // the browser's fragment scroll.
+                    if let Some(slug) = slug
+                        && let Some(concept) = snapshot.bundle.get(&resolved)
+                    {
+                        let target_doc = crate::markdown::render_document(
+                            &concept.document.body,
+                            80,
+                            &self.theme,
+                            None,
+                        );
+                        if let Some(line) = Self::anchor_line(&target_doc, &slug) {
+                            self.explorer.scroll = line;
+                        }
+                    }
                 } else if *kind == okf_core::LinkKind::External {
                     self.toast(format!("external: {target}"), false);
                 } else {
@@ -1705,6 +1735,17 @@ impl App {
                 }
             }
         }
+    }
+
+    /// The rendered line of the heading a link fragment names, matching the
+    /// GitHub-style slug every renderer derives with
+    /// [`okf_core::heading_slug`]. `None` when no heading matches — a
+    /// broken anchor, which the spec permits.
+    fn anchor_line(doc: &crate::markdown::RenderedDoc, slug: &str) -> Option<usize> {
+        doc.headings
+            .iter()
+            .find(|h| okf_core::heading_slug(&h.text) == slug)
+            .map(|h| h.line)
     }
 
     /// Jumps the explorer to a concept, recording history.

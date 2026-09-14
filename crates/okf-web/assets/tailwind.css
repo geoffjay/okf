@@ -398,7 +398,7 @@
   }
 
   .tree {
-    @apply sticky top-16 overflow-y-auto p-4;
+    @apply sticky top-16 overflow-y-auto p-4 text-sm;
     max-height: calc(100vh - 4rem);
     border-right: 1px solid var(--edge);
 
@@ -451,7 +451,7 @@
        the page left — the column grows and the content stays centered. */
     @apply mx-auto min-w-0;
     padding: 2rem 4rem;
-    max-width: 60rem;
+    max-width: 80rem;
     width: 100%;
   }
   main > h1 {

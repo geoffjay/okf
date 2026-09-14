@@ -217,6 +217,116 @@ fn renderer_survives_adversarial_input() {
     }
 }
 
+#[test]
+fn renderer_expands_wikilinks_into_anchor_links() {
+    let theme = okf_studio::theme::Theme::with_color(false);
+    let body = "# Title\n\nSee [[Pricing Tiers]] and `[[not a link]]`.\n\n## Pricing Tiers\n\nText.\n";
+    let doc = okf_studio::markdown::render_document(body, 60, &theme, None);
+    assert_eq!(doc.links.len(), 1, "{:?}", doc.links);
+    match &doc.links[0].kind {
+        okf_studio::markdown::FocusKind::Link { text, target, kind } => {
+            assert_eq!(text, "Pricing Tiers");
+            assert_eq!(target, "#pricing-tiers");
+            assert_eq!(*kind, okf_core::LinkKind::Anchor);
+        }
+        other => panic!("expected a link focus target, got {other:?}"),
+    }
+    let text: String = doc
+        .lines
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+                + "\n"
+        })
+        .collect();
+    assert!(text.contains("→Pricing Tiers"), "{text}");
+    assert!(text.contains("[[not a link]]"), "code span verbatim: {text}");
+}
+
+#[test]
+fn enter_follows_wikilink_anchors_and_cross_document_fragments() {
+    let root = std::env::temp_dir().join(format!(
+        "okf-studio-wiki-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    write(
+        &root,
+        "index.md",
+        "---\nokf_version: \"0.2\"\n---\n\n# Concept\n",
+    );
+    write(
+        &root,
+        "other.md",
+        "---\ntype: Doc\ntitle: Other\n---\n\n# Other\n\nFiller.\n\n## Deep Section\n\nText.\n",
+    );
+    write(
+        &root,
+        "doc.md",
+        "---\ntype: Doc\ntitle: Doc\n---\n\n# Doc\n\nSee [[Details]] then [[other#Deep Section]].\n\n## Details\n\nBody.\n",
+    );
+    let bundle = TestBundle { root };
+    let mut app = app_with(&bundle);
+    let theme = okf_studio::theme::Theme::with_color(false);
+
+    let doc_id = ConceptId::parse("doc").unwrap();
+    app.open_concept(&doc_id);
+
+    // Tab focuses the same-document wikilink; Enter scrolls to its heading.
+    app.run_action(okf_studio::keymap::Action::NextLink);
+    app.run_action(okf_studio::keymap::Action::Activate);
+    let doc_body = &app
+        .snapshot
+        .as_ref()
+        .unwrap()
+        .bundle
+        .get(&doc_id)
+        .unwrap()
+        .document
+        .body
+        .clone();
+    let expected = okf_studio::markdown::render_document(doc_body, 80, &theme, None)
+        .headings
+        .iter()
+        .find(|h| h.text == "Details")
+        .expect("heading rendered")
+        .line;
+    assert_eq!(app.explorer.scroll, expected);
+    assert_eq!(app.explorer.selected, Some(TreeSel::Concept(doc_id)));
+
+    // The next link is the cross-document one: it opens the target concept
+    // and lands on the fragment's heading.
+    app.run_action(okf_studio::keymap::Action::NextLink);
+    app.run_action(okf_studio::keymap::Action::Activate);
+    let other_id = ConceptId::parse("other").unwrap();
+    assert_eq!(
+        app.explorer.selected,
+        Some(TreeSel::Concept(other_id.clone()))
+    );
+    let other_body = app
+        .snapshot
+        .as_ref()
+        .unwrap()
+        .bundle
+        .get(&other_id)
+        .unwrap()
+        .document
+        .body
+        .clone();
+    let expected_other = okf_studio::markdown::render_document(&other_body, 80, &theme, None)
+        .headings
+        .iter()
+        .find(|h| h.text == "Deep Section")
+        .expect("heading rendered")
+        .line;
+    assert_eq!(app.explorer.scroll, expected_other);
+}
+
 // ---------------------------------------------------------------------------
 // Reducer.
 // ---------------------------------------------------------------------------

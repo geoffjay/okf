@@ -230,7 +230,7 @@ pub struct Citation {
 /// non-http schemes for warehouse assets (`bigquery:project.dataset.table`);
 /// treating those as relative paths would have a consumer looking for a file
 /// that was never meant to exist.
-fn is_external(t: &str) -> bool {
+pub(crate) fn is_external(t: &str) -> bool {
     t.starts_with("//") /* protocol-relative URL */ || has_uri_scheme(t)
 }
 

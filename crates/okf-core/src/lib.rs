@@ -160,8 +160,8 @@ pub use links::{Citation, Link, LinkKind, ParseLinkKindError, field_path_candida
 pub use log::{Log, LogDay, LogEntry, append_log_entry};
 #[doc(inline)]
 pub use markdown::{
-    LinkRewriteAction, MarkdownHeading, SlugAllocator, extract_headings, heading_slug,
-    matches_heading, parse_heading_line, rewrite_markdown_links,
+    LinkRewriteAction, MarkdownHeading, SlugAllocator, expand_wikilinks, extract_headings,
+    heading_slug, matches_heading, parse_heading_line, rewrite_markdown_links,
 };
 #[doc(inline)]
 pub use provenance::{Attribution, ResourceKind, Source, UsageWindow};

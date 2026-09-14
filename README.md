@@ -43,6 +43,7 @@ A **pure-Rust** implementation, library and CLI toolkit for the [Open Knowledge 
   - [Trust tiers](#trust-tiers)
   - [Freshness and staleness](#freshness-and-staleness)
   - [Provenance and footnote attribution](#provenance-and-footnote-attribution)
+  - [Cross-links, heading links, and anchors](#cross-links-heading-links-and-anchors)
   - [Attested computations](#attested-computations)
 - [CLI reference and workflows](#cli-reference-and-workflows)
   - [Interactive studio: studio](#interactive-studio-studio)
@@ -349,6 +350,25 @@ sources:
 ```
 
 Inline claims reference sources via standard Markdown footnotes keyed to `sources[].id` (e.g., `According to company guidelines...[^mileage-guide]`).
+
+### Cross-links, heading links, and anchors
+
+Concepts link to each other with standard Markdown links (spec §6.1), either bundle-absolute (`/tables/customers.md`, recommended) or relative (`./other.md`). A link may address a specific **section** of its target by appending the heading's anchor, which every renderer derives as a GitHub-style slug:
+
+```markdown
+See the [join keys](/tables/orders.md#join-keys) and [Enterprise tier](#enterprise-tier).
+```
+
+For convenience, `okf` also expands `[[target]]` **heading-link shorthand** while rendering, so producers that write wiki-style links get working links everywhere (`okf site` pages, the studio viewer, the link graph):
+
+| Shorthand | Expands to | Points at |
+|-----------|------------|-----------|
+| `[[Pricing Tiers]]` | `[Pricing Tiers](#pricing-tiers)` | The `## Pricing Tiers` heading of the same document |
+| `[[#Pricing Tiers]]` | `[Pricing Tiers](#pricing-tiers)` | Same, written as an explicit anchor |
+| `[[plans/rollout]]` | `[plans/rollout](plans/rollout)` | Another concept |
+| `[[plans/rollout#Phase 2]]` | `[Phase 2](plans/rollout#phase-2)` | A heading in another concept |
+
+Fragments are slugified (the transform is idempotent, so already-slug targets are unchanged), and wikilinks inside fenced code blocks or inline code stay verbatim. `okf validate` reports anchors — shorthand or authored — that match no heading in the target document.
 
 ### Attested computations
 

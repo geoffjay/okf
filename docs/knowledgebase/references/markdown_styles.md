@@ -31,6 +31,16 @@ Plain, **bold**, *italic*, ***bold italic***, ~~strikethrough~~, and
 `inline code`. Also a [link](https://example.com), and an auto-link:
 <https://example.com>.
 
+## Links to headings
+
+An anchor link to a heading in this page: [Tables](#tables). The
+`[[heading]]` shorthand renders the same way: [[Tables]], as does its
+explicit spelling [[#Blockquote]]. A heading in another document is
+addressed by appending its anchor:
+[the okf spec's summary](okf-spec.md#summary), or as shorthand
+[[okf-spec.md#Summary]]. Shorthand inside code stays literal:
+`[[not a link]]`.
+
 ## Lists
 
 Unordered:

@@ -3,21 +3,25 @@
 //!
 //! The pipeline, per concept body:
 //!
-//! 1. [`okf_core::markdown::rewrite_markdown_links`] maps `.md` targets to
+//! 1. [`okf_core::markdown::expand_wikilinks`] turns `[[target]]` shorthand
+//!    into standard markdown links, so heading links resolve against the
+//!    ids [`Intercept`] emits below.
+//! 2. [`okf_core::markdown::rewrite_markdown_links`] maps `.md` targets to
 //!    the generated site's `.html` URLs (relative, so the site deploys under
-//!    any base path), leaving code fences and inline code untouched.
-//! 2. A [`pulldown_cmark::Parser`] event stream (GitHub-flavoured markdown:
+//!    any base path) while keeping each link's `#fragment`, leaving code
+//!    fences and inline code untouched.
+//! 3. A [`pulldown_cmark::Parser`] event stream (GitHub-flavoured markdown:
 //!    tables, strikethrough, task lists, footnotes; raw `Html` events
 //!    dropped — pulldown's `unsafe` option stays off) intercepts
 //!    ` ```mermaid ` code blocks, emitting `<pre class="mermaid">` with the
 //!    escaped source as a render-failure/noscript fallback.
-//! 3. `write_classed_html` renders everything else, emitting a `md-*`
+//! 4. `write_classed_html` renders everything else, emitting a `md-*`
 //!    class on every element so the Tailwind-compiled stylesheet (whose
 //!    `source(none)` mode only defines classes named in `tailwind.css`)
 //!    styles markdown bodies through component classes, like the rest of
 //!    the site.
 
-use okf_core::markdown::{LinkRewriteAction, rewrite_markdown_links};
+use okf_core::markdown::{LinkRewriteAction, expand_wikilinks, rewrite_markdown_links};
 use okf_core::{Bundle, ConceptId, LinkKind};
 use pulldown_cmark::{Alignment, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
 use std::collections::{HashMap, VecDeque};
@@ -48,10 +52,15 @@ pub fn render(
     prefix: &str,
     out_of: &dyn Fn(&ConceptId) -> String,
 ) -> RenderedBody {
-    // (1) Rewrite concept links to output URLs. The callback mirrors
-    // okf-core's own resolution: prefer whichever percent-decoding reading
-    // names a concept that exists, else the literal one (broken link).
-    let rewritten = rewrite_markdown_links(body, |link, _| {
+    // (1) Expand `[[target]]` wikilinks into standard markdown links, then
+    // rewrite every concept link to its output URL. The expansion happens
+    // first so wikilinks flow through the same resolution as authored links;
+    // both passes leave code fences and inline code untouched.
+    let expanded = expand_wikilinks(body).0;
+    // The callback mirrors okf-core's own resolution: prefer whichever
+    // percent-decoding reading names a concept that exists, else the literal
+    // one (broken link).
+    let rewritten = rewrite_markdown_links(&expanded, |link, _| {
         let candidates = link.resolve_all(id);
         let target = candidates
             .iter()
@@ -59,7 +68,11 @@ pub fn render(
             .or_else(|| candidates.first());
         match (target, link.kind) {
             (Some(target), LinkKind::Absolute | LinkKind::Relative) => {
-                LinkRewriteAction::Rewrite(format!("{prefix}{}", out_of(target)))
+                // Re-attach the anchor fragment: `foo.md#frag` must become
+                // `foo.html#frag`, not lose the fragment (the emitted
+                // heading ids are the anchor's resolution targets).
+                let anchor = link.anchor().map(|a| format!("#{a}")).unwrap_or_default();
+                LinkRewriteAction::Rewrite(format!("{prefix}{}{anchor}", out_of(target)))
             }
             // External links, anchors, and malformed targets pass through.
             _ => LinkRewriteAction::Keep,
@@ -712,5 +725,112 @@ mod tests {
             );
             assert!(!rendered.has_shiki, "{body}");
         }
+    }
+
+    #[test]
+    fn wikilinks_render_as_links_to_their_heading() {
+        let body = "# Doc\n\nSee [[Pricing Tiers]] and [[#Notes]].\n\n## Pricing Tiers\n\nText.\n\n## Notes\n\nMore.\n";
+        let bundle = bundle_with(body);
+        let id = ConceptId::parse("doc").unwrap();
+        let rendered = render(
+            &bundle,
+            &id,
+            &bundle.get(&id).unwrap().document.body,
+            "",
+            &out_of,
+        );
+        // The link and the heading id it points at must agree, or the
+        // anchor lands nowhere.
+        assert!(
+            rendered
+                .html
+                .contains(r##"<a class="md-a" href="#pricing-tiers">Pricing Tiers</a>"##),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered.html.contains(r#"<h2 id="pricing-tiers""#),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered
+                .html
+                .contains(r##"<a class="md-a" href="#notes">Notes</a>"##),
+            "{}",
+            rendered.html
+        );
+        assert!(!rendered.html.contains("[["), "{}", rendered.html);
+    }
+
+    #[test]
+    fn wikilinks_in_code_stay_literal() {
+        let body = "```text\n[[not a link]]\n```\n\nAnd `[[also not]]` inline.\n";
+        let bundle = bundle_with(body);
+        let id = ConceptId::parse("doc").unwrap();
+        let rendered = render(
+            &bundle,
+            &id,
+            &bundle.get(&id).unwrap().document.body,
+            "",
+            &out_of,
+        );
+        assert!(
+            rendered.html.contains("[[not a link]]"),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered.html.contains("[[also not]]"),
+            "{}",
+            rendered.html
+        );
+    }
+
+    #[test]
+    fn cross_document_anchors_survive_the_url_rewrite() {
+        let dir = std::env::temp_dir().join(format!("okf-web-md-anchor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("tables")).unwrap();
+        std::fs::write(
+            dir.join("index.md"),
+            "---\nokf_version: \"0.2\"\n---\n\n# Index\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("tables/orders.md"),
+            "---\ntype: Doc\n---\n\n# Orders\n\n## Join Keys\n\nText.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("doc.md"),
+            "---\ntype: Doc\n---\n\nAuthored: [Keys](tables/orders.md#join-keys).\n\nWikilink: [[tables/orders#Join Keys]].\n",
+        )
+        .unwrap();
+        let bundle = Bundle::load(&dir).unwrap();
+        let id = ConceptId::parse("doc").unwrap();
+        let rendered = render(
+            &bundle,
+            &id,
+            &bundle.get(&id).unwrap().document.body,
+            "",
+            &out_of,
+        );
+        // Both forms must deep-link into the target page, fragment intact.
+        assert!(
+            rendered
+                .html
+                .contains(r#"href="tables/orders.html#join-keys">Keys</a>"#),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered
+                .html
+                .contains(r#"href="tables/orders.html#join-keys">Join Keys</a>"#),
+            "{}",
+            rendered.html
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
