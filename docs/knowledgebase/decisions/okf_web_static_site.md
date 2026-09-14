@@ -94,8 +94,10 @@ escapes code, tables render, mermaid blocks intercept cleanly.
 
 ## Non-goals
 
-- No search in v1 (post-build pagefind later, not porting the fuzzy
-  SearchIndex).
+- ~~No search in v1~~ — superseded by the [search decision record](okf_search_engine.md)
+  and [search plan](../plans/okf_search_plan.md): the engine moved to
+  okf-core and the site ships a build-time index plus a first-party
+  vanilla-JS client (not pagefind, not WASM).
 - No refactor verbs or fix engine on the site — a static site is read-only
   by construction; those stay in the TUI.
 - No interactive graph in v1; revisit with Leptos islands only if pan/zoom/
