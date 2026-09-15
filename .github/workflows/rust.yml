@@ -52,17 +52,21 @@ jobs:
         run: cargo clippy --all-targets --locked -p okf-validator --no-default-features
       - name: Clippy okf-studio without parsers
         run: cargo clippy --all-targets --locked -p okf-studio --no-default-features
-      - name: Clippy okf CLI with SQL only
-        run: cargo clippy --all-targets --locked -p okf --no-default-features --features validator,studio,sql
+      - name: Clippy okf-web without parsers
+        run: cargo clippy --all-targets --locked -p okf-web --no-default-features
+      - name: Clippy okf CLI with SQL only (studio + site)
+        run: cargo clippy --all-targets --locked -p okf --no-default-features --features validator,studio,site,sql
       - name: Test okf-validator without parsers
         run: cargo test --all-targets --locked -p okf-validator --no-default-features
       - name: Test okf-studio without parsers
         run: cargo test --all-targets --locked -p okf-studio --no-default-features
+      - name: Test okf-web without parsers
+        run: cargo test --all-targets --locked -p okf-web --no-default-features
       - name: Parser-free tree contains no copyleft or unmaintained parser crates
         run: |
           set -euo pipefail
           for pkg in "okf-validator --no-default-features --features sql" \
-                     "okf --no-default-features --features validator,studio,sql"; do
+                     "okf --no-default-features --features validator,studio,site,sql"; do
             # shellcheck disable=SC2086
             if cargo tree -p $pkg -e normal,build --prefix none --locked \
                 | grep -E '^(rustpython|malachite|tiny-keccak|unicode_names2|unic-)'; then

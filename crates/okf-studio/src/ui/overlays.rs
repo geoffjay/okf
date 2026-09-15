@@ -73,7 +73,7 @@ fn draw_palette(frame: &mut Frame, app: &App, body: Rect, state: &PaletteState) 
     let theme = &app.theme;
     let results = app.palette_results(state);
     let count = match &results {
-        PaletteResults::Search(hits) => hits.len(),
+        PaletteResults::Search(hits, body_hits) => hits.len() + body_hits.len(),
         PaletteResults::Commands(commands) => commands.len(),
     };
     let height = u16::try_from(count.min(14)).unwrap_or(0) + 3;
@@ -100,48 +100,12 @@ fn draw_palette(frame: &mut Frame, app: &App, body: Rect, state: &PaletteState) 
     let sel = state.sel.min(count.saturating_sub(1));
     let mut lines: Vec<Line<'static>> = Vec::new();
     match results {
-        PaletteResults::Search(hits) => {
-            for (ix, hit) in hits.iter().enumerate().take(usize::from(inner.height)) {
-                let snapshot = app.snapshot.as_ref();
-                let meta = snapshot.and_then(|s| s.meta(&hit.id));
-                let glyph = meta.map_or("○", |m| tier_glyph(m.tier));
-                let glyph_style = meta.map_or_else(Style::default, |m| theme.tier(m.tier));
-                let marker = if ix == sel { "▸ " } else { "  " };
-                let mut spans = vec![
-                    Span::raw(marker.to_string()),
-                    Span::styled(format!("{glyph} "), glyph_style),
-                ];
-                if hit.heading.is_some() {
-                    spans.push(Span::styled(format!("{} › ", hit.id), theme.dim()));
-                    spans.extend(highlight_match(
-                        &hit.label,
-                        &hit.indices,
-                        Style::default(),
-                        theme,
-                    ));
-                    spans.push(Span::styled("  (heading)".to_string(), theme.dim()));
-                } else if hit.label == hit.id.to_string() {
-                    spans.extend(highlight_match(
-                        &hit.label,
-                        &hit.indices,
-                        Style::default(),
-                        theme,
-                    ));
-                } else {
-                    spans.push(Span::raw(format!("{}  ", hit.id)));
-                    spans.extend(highlight_match(
-                        &hit.label,
-                        &hit.indices,
-                        theme.dim(),
-                        theme,
-                    ));
-                }
-                let mut line = Line::from(spans);
-                if ix == sel {
-                    line = line.style(theme.selection());
-                }
-                lines.push(line);
+        PaletteResults::Search(hits, body_hits) => {
+            let visible = usize::from(inner.height);
+            for (ix, hit) in hits.iter().enumerate().take(visible) {
+                push_metadata_row(&mut lines, app, hit, ix, sel);
             }
+            push_body_rows(&mut lines, &body_hits, hits.len(), visible, sel, *theme);
         }
         PaletteResults::Commands(commands) => {
             for (ix, (label, key, _)) in commands.iter().enumerate().take(usize::from(inner.height))
@@ -168,6 +132,86 @@ fn draw_palette(frame: &mut Frame, app: &App, body: Rect, state: &PaletteState) 
         lines.push(Line::from(Span::styled("  no matches", theme.dim())));
     }
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// One metadata hit row: tier glyph, then id / title / heading with the
+/// fuzzy match highlighted.
+fn push_metadata_row(
+    lines: &mut Vec<Line<'static>>,
+    app: &App,
+    hit: &crate::search::SearchHit,
+    ix: usize,
+    sel: usize,
+) {
+    let theme = &app.theme;
+    let meta = app.snapshot.as_ref().and_then(|s| s.meta(&hit.id));
+    let glyph = meta.map_or("○", |m| tier_glyph(m.tier));
+    let glyph_style = meta.map_or_else(Style::default, |m| theme.tier(m.tier));
+    let marker = if ix == sel { "▸ " } else { "  " };
+    let mut spans = vec![
+        Span::raw(marker.to_string()),
+        Span::styled(format!("{glyph} "), glyph_style),
+    ];
+    if hit.heading.is_some() {
+        spans.push(Span::styled(format!("{} › ", hit.id), theme.dim()));
+        spans.extend(highlight_match(
+            &hit.label,
+            &hit.indices,
+            Style::default(),
+            theme,
+        ));
+        spans.push(Span::styled("  (heading)".to_string(), theme.dim()));
+    } else if hit.label == hit.id.to_string() {
+        spans.extend(highlight_match(
+            &hit.label,
+            &hit.indices,
+            Style::default(),
+            theme,
+        ));
+    } else {
+        spans.push(Span::raw(format!("{}  ", hit.id)));
+        spans.extend(highlight_match(
+            &hit.label,
+            &hit.indices,
+            theme.dim(),
+            theme,
+        ));
+    }
+    let mut line = Line::from(spans);
+    if ix == sel {
+        line = line.style(theme.selection());
+    }
+    lines.push(line);
+}
+
+/// The palette's body-text rows: `id line N: snippet`, dimmed like heading
+/// rows, placed after the metadata rows.
+fn push_body_rows(
+    lines: &mut Vec<Line<'static>>,
+    body_hits: &[crate::search::BodyHit],
+    metadata_len: usize,
+    visible: usize,
+    sel: usize,
+    theme: crate::theme::Theme,
+) {
+    for (off, hit) in body_hits.iter().enumerate() {
+        let ix = metadata_len + off;
+        if ix >= visible {
+            break;
+        }
+        let marker = if ix == sel { "▸ " } else { "  " };
+        let spans = vec![
+            Span::raw(marker.to_string()),
+            Span::styled(format!("{} ", hit.id), theme.dim()),
+            Span::styled(format!("line {}: ", hit.line), theme.dim()),
+            Span::raw(hit.snippet.clone()),
+        ];
+        let mut line = Line::from(spans);
+        if ix == sel {
+            line = line.style(theme.selection());
+        }
+        lines.push(line);
+    }
 }
 
 fn draw_diagnostics(frame: &mut Frame, app: &App, body: Rect, state: &DiagnosticsState) {

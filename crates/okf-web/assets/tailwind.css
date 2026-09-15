@@ -1,0 +1,664 @@
+/*
+ * Tailwind v4 source for the okf-web static site — the ONLY hand-authored
+ * stylesheet. `cargo xtask tailwind` compiles it with the Tailwind v4
+ * standalone CLI (no Node) into `site.css`, which is committed and
+ * `include_str!`'d by `render.rs`; the generator itself needs no toolchain.
+ *
+ * `source(none)` turns off Tailwind's file scanning: every class the templates
+ * use is defined here via `@apply`, so the output is deterministic and carries
+ * no utilities beyond the ones these components reference. Add styling here and
+ * regenerate — never hand-edit `site.css`, and never rely on a utility class in
+ * a template that this file does not `@apply`.
+ */
+@import "tailwindcss" source(none);
+
+/*
+ * Palette and surface tokens as plain custom properties (not `@theme`, which
+ * tree-shakes unused values under `source(none)`). Surfaces, ink, and edges
+ * come from Tailwind's `mist` palette (v4.2+): mist-100 surface in light
+ * mode, mist-900 in dark. Accent colors (links, trust tiers, statuses,
+ * severities) use the standard Tailwind scales and flip to lighter steps in
+ * dark mode for contrast.
+ */
+:root {
+  /* Light values are the defaults; dark flips via the media query below
+     (system preference) or the .dark class (explicit user choice). */
+  color-scheme: light;
+
+  /*
+   * Typography tokens. Every font in the site resolves through these two, so
+   * one override changes the whole face: `okf site` writes a generated
+   * `assets/fonts.css` from a bundle's `.okf/config.yaml` and links it after
+   * this stylesheet, where its `:root` block wins the cascade tie. Both
+   * defaults restate today's computed values — system sans on `body`, and
+   * for code the same stack Tailwind's preflight applies through
+   * `--default-mono-font-family` — so the tokens change nothing on their own.
+   */
+  --font-body: system-ui, sans-serif;
+  --font-code:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
+  --mauve-50: oklch(98.5% 0 none);
+  --mauve-100: oklch(96% 0.003 325.6);
+  --mauve-200: oklch(92.2% 0.005 325.62);
+  --mauve-300: oklch(86.5% 0.012 325.68);
+  --mauve-400: oklch(71.1% 0.019 323.02);
+  --mauve-500: oklch(54.2% 0.034 322.5);
+  --mauve-600: oklch(43.5% 0.029 321.78);
+  --mauve-700: oklch(36.4% 0.029 323.89);
+  --mauve-800: oklch(26.3% 0.024 320.12);
+  --mauve-900: oklch(21.2% 0.019 322.12);
+  --mauve-950: oklch(14.5% 0.008 326);
+
+  --surface: oklch(96.3% 0.002 197.1); /* mist-100 */
+  --ink: oklch(14.8% 0.004 228.8); /* mist-950 */
+  --edge: oklch(87.2% 0.007 219.6); /* mist-300 */
+  --link: var(--mauve-500); /* violet-500 */
+
+  --panel-bg: oklch(98.7% 0.002 197.1); /* mist-50 */
+  --code-bg: oklch(92.5% 0.005 214.3); /* mist-200 */
+  /* Diagram canvas matches the panel background (the frontmatter card). */
+  --mermaid-bg: oklch(98.7% 0.002 197.1); /* mist-50, matches --panel-bg */
+
+  --tier-unverified: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --tier-machine: oklch(54.1% 0.281 293.009); /* violet-600 */
+  --tier-human: oklch(52.7% 0.154 150.069); /* green-700 */
+  --status-draft: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --status-stable: oklch(52.7% 0.154 150.069); /* green-700 */
+  --status-deprecated: oklch(50.5% 0.213 27.518); /* red-700 */
+  --status-other: oklch(45% 0.017 213.2); /* mist-600 */
+  --sev-info: oklch(45% 0.017 213.2); /* mist-600 */
+  --sev-warning: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --sev-error: oklch(50.5% 0.213 27.518); /* red-700 */
+  --danger: oklch(50.5% 0.213 27.518); /* red-700 */
+}
+
+/* System preference via the media query; explicit choice via the html
+   classes below (set by the theme bootstrap script from localStorage).
+   `color-scheme` also follows so form controls and scrollbars match. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    color-scheme: dark;
+    --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
+    --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
+    --edge: oklch(37.8% 0.015 216); /* mist-700 */
+    --link: var(--mauve-400); /* violet-300 */
+    --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --tier-unverified: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --tier-machine: oklch(70.2% 0.183 293.541); /* violet-400 */
+    --tier-human: oklch(72.3% 0.219 149.579); /* green-500 */
+    --status-draft: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --status-stable: oklch(72.3% 0.219 149.579); /* green-500 */
+    --status-deprecated: oklch(63.7% 0.237 25.331); /* red-500 */
+    --status-other: oklch(72.3% 0.014 214.4); /* mist-400 */
+    --sev-info: oklch(72.3% 0.014 214.4); /* mist-400 */
+    --sev-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
+    --danger: oklch(63.7% 0.237 25.331); /* red-500 */
+  }
+}
+:root.dark {
+  color-scheme: dark;
+  --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
+  --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
+  --edge: oklch(37.8% 0.015 216); /* mist-700 */
+  --link: var(--mauve-400); /* violet-300 */
+  --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --tier-unverified: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --tier-machine: oklch(70.2% 0.183 293.541); /* violet-400 */
+  --tier-human: oklch(72.3% 0.219 149.579); /* green-500 */
+  --status-draft: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --status-stable: oklch(72.3% 0.219 149.579); /* green-500 */
+  --status-deprecated: oklch(63.7% 0.237 25.331); /* red-500 */
+  --status-other: oklch(72.3% 0.014 214.4); /* mist-400 */
+  --sev-info: oklch(72.3% 0.014 214.4); /* mist-400 */
+  --sev-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
+  --danger: oklch(63.7% 0.237 25.331); /* red-500 */
+}
+:root.light {
+  color-scheme: light;
+}
+
+@layer base {
+  body {
+    @apply m-0;
+    /* Split out of the `font:` shorthand: a `var()` that fails to substitute
+       invalidates its whole declaration at computed-value time, which would
+       take the size and line height down with the family. */
+    font-size: 16px;
+    line-height: 1.6;
+    font-family: var(--font-body);
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  a {
+    color: var(--link);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.25;
+  }
+
+  code {
+    font-family: var(--font-code);
+    background: var(--code-bg);
+    border-radius: 3px;
+    padding: 0.1em 0.3em;
+  }
+
+  pre {
+    @apply overflow-x-auto;
+    font-family: var(--font-code);
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+  }
+
+  /*
+   * Shiki highlight: the vendored bundle emits token colors as
+   * --shiki-light/--shiki-dark CSS variables (defaultColor: false), so
+   * resolving them here is the whole theme story — a theme flip costs
+   * nothing. The selector ladder mirrors the theme system above: the
+   * .light class and system-light default resolve the light variables;
+   * .dark and system-dark resolve the dark ones. .shiki lives on the <pre>
+   * the boot script swapped in; inline <code> never carries it.
+   */
+  .shiki,
+  .shiki span {
+    color: var(--shiki-light);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light):not(.dark) .shiki,
+    :root:not(.light):not(.dark) .shiki span {
+      color: var(--shiki-dark);
+    }
+  }
+  :root.dark .shiki,
+  :root.dark .shiki span {
+    color: var(--shiki-dark);
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border: 1px solid var(--edge);
+    padding: 0.25rem 0.6rem;
+  }
+
+  /*
+   * Markdown prose base: body copy slightly smaller, muted, and relaxed
+   * (element-level overrides come from the `md-*` component classes).
+   */
+  article {
+    @apply text-[0.9375rem] leading-relaxed text-[color:var(--ink)]/85;
+  }
+}
+
+
+/*
+ * Markdown element classes, emitted by okf-web's classed-HTML writer on
+ * every rendered markdown element (`md-*`). Deliberately strong
+ * heading/body hierarchy — body copy slightly smaller, muted, and relaxed;
+ * headings step up sharply in size and weight with generous spacing.
+ */
+@layer components {
+  .md-p {
+    @apply my-3.5;
+  }
+  .md-h1 {
+    @apply mt-8 mb-3 text-3xl font-bold;
+  }
+  .md-h2 {
+    @apply mt-7 mb-2.5 text-2xl font-bold;
+  }
+  .md-h3 {
+    @apply mt-6 mb-2 text-xl font-semibold;
+  }
+  .md-h4,
+  .md-h5,
+  .md-h6 {
+    @apply mt-5 mb-1.5 text-lg font-semibold;
+  }
+  .md-list {
+    @apply my-3.5 list-disc pl-6;
+  }
+  ol.md-list {
+    @apply list-decimal;
+  }
+  .md-li {
+    @apply my-1;
+  }
+  .md-a {
+    @apply underline decoration-[color:var(--link)]/45 underline-offset-2;
+  }
+  .md-a:hover {
+    @apply decoration-[color:var(--link)];
+  }
+  .md-quote {
+    @apply my-5 border-l-[3px] border-[color:var(--edge)] py-2 pl-5 italic opacity-85;
+  }
+  .md-hr {
+    @apply my-8 border-t border-[color:var(--edge)];
+  }
+  .md-img {
+    @apply max-w-full;
+  }
+  .md-strong {
+    @apply font-bold text-[color:var(--ink)];
+  }
+  .md-em {
+    @apply italic;
+  }
+
+  /* Citation number at the start of a footnote body: a link back to its
+     reference, styled as a small superscript number rather than body copy. */
+  .md-footnote .md-footnote-backref {
+    @apply no-underline font-semibold;
+    color: var(--link);
+  }
+  /* The body is a single markdown paragraph; drop its block margins so the
+     number and the text share one line. */
+  .md-footnote .md-p {
+    @apply my-0 inline;
+  }
+  .md-del {
+    @apply line-through;
+  }
+  .md-code {
+    @apply text-[0.9em];
+  }
+  /* A code block is a card — the same recipe `pre.mermaid` uses below:
+     bordered, rounded, padded, with its own surface, so preformatted
+     content reads as a block instead of loose monospace prose. The surface
+     is the inline-code token, so inline and block code agree. */
+  .md-pre {
+    @apply overflow-x-auto rounded-lg border border-[color:var(--edge)] p-4 my-4;
+    background: var(--code-bg);
+  }
+  /* Shiki's highlighted HTML replaces the whole `<pre>`, and its `<code>`
+     carries no `md-code` class — size on the block instead so a block does
+     not grow when the highlight swaps in. */
+  .md-pre code {
+    @apply text-[0.9em];
+  }
+  .md-table {
+    @apply my-4 border-collapse;
+  }
+  .md-th {
+    @apply border border-[color:var(--edge)] px-2.5 py-1 text-left font-semibold;
+  }
+  .md-td {
+    @apply border border-[color:var(--edge)] px-2.5 py-1;
+  }
+  .md-footnote {
+    @apply text-sm opacity-85;
+  }
+  .md-footnote-ref,
+  .md-footnote-label {
+    @apply text-sm;
+  }
+  .md-task {
+    @apply mr-1;
+  }
+  .md-br {
+    @apply block;
+  }
+
+
+  .site-header {
+    @apply fixed inset-x-0 top-0 z-50 flex items-center gap-3 px-4 py-2;
+    height: 4rem;
+    border-bottom: 1px solid var(--edge);
+    background: var(--surface);
+  }
+
+  /* Visually-hidden checkbox that drives the nav collapse; the label is
+     the visible hamburger. sr-only keeps it keyboard-accessible. */
+  .nav-toggle-input {
+    @apply sr-only;
+  }
+
+  .site-header .menu-btn {
+    @apply flex shrink-0 cursor-pointer items-center justify-center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .site-header .menu-btn:hover {
+    background: var(--panel-bg);
+  }
+
+  .site-header .site-name {
+    @apply truncate font-bold;
+  }
+
+  .site-header .site-search {
+    @apply relative ml-auto;
+  }
+  .site-header .site-search input {
+    @apply w-48 rounded-md px-2 py-1;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    color: var(--ink);
+  }
+  .site-header .site-search input::placeholder {
+    opacity: 0.6;
+  }
+  .site-header .site-search input:focus {
+    @apply w-64;
+    border-color: var(--link);
+    outline: none;
+  }
+  /* The results dropdown: absolutely positioned under the input, panel
+     background and edge from the theme variables so light/dark both work. */
+  .site-search-results {
+    @apply absolute right-0 z-50 mt-1 max-h-96 w-[24rem] max-w-[90vw] overflow-y-auto rounded-md py-1;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.15);
+  }
+  .site-search-results .search-row {
+    @apply block truncate px-3 py-1 text-sm;
+    color: var(--ink);
+  }
+  .site-search-results .search-row:hover {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+  .site-search-results .search-row.selected,
+  .site-search-results .search-row.selected:hover {
+    background: color-mix(in oklab, var(--ink) 15%, transparent);
+  }
+  .site-search-results .search-row.body {
+    @apply whitespace-nowrap;
+    opacity: 0.85;
+  }
+
+  /* Theme toggle: styled like the menu button. Show the sun in dark mode
+     (click for light) and the moon in light mode (click for dark); the
+     theme bootstrap/toggle scripts drive the html class. */
+  .site-header .theme-btn {
+    @apply flex shrink-0 cursor-pointer items-center justify-center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .site-header .theme-btn:hover {
+    background: var(--panel-bg);
+  }
+  .site-header .theme-btn .icon-sun {
+    @apply hidden;
+  }
+  :root:not(.light):not(.dark) .site-header .theme-btn .icon-moon {
+    @apply hidden;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light):not(.dark) .site-header .theme-btn .icon-sun {
+      @apply block;
+    }
+    :root:not(.light):not(.dark) .site-header .theme-btn .icon-moon {
+      @apply hidden;
+    }
+  }
+  :root.dark .site-header .theme-btn .icon-sun {
+    @apply block;
+  }
+  :root.dark .site-header .theme-btn .icon-moon {
+    @apply hidden;
+  }
+
+  /* CSS-only collapse: when the (visually hidden) toggle checkbox is
+     checked, hide the tree and reclaim its grid column. The html.nav-hidden
+     class is the persisted form of the same state, applied by the nav
+     boot/toggle scripts so the choice survives reloads. */
+  body:has(.nav-toggle-input:checked) .tree,
+  html.nav-hidden .tree {
+    @apply hidden;
+  }
+  body:has(.nav-toggle-input:checked) .layout,
+  html.nav-hidden .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .layout {
+    @apply grid pt-16;
+    grid-template-columns: 260px 1fr;
+    min-height: calc(100vh - 4rem);
+  }
+
+  .tree {
+    @apply sticky top-16 overflow-y-auto p-4 text-sm;
+    max-height: calc(100vh - 4rem);
+    border-right: 1px solid var(--edge);
+
+    .special a,
+    li a {
+      @apply block no-underline;
+      /* Inactive items are a muted ink — mixing toward the surface dims them
+         (darker in dark mode, lighter in light mode). The active page is full
+         ink (brightest/lightest), and hovering brightens toward it. Text is
+         body ink, never link blue; roomy vertical spacing. */
+      color: color-mix(in oklab, var(--ink) 75%, var(--surface));
+      padding: 0.4rem 0;
+    }
+    .special a:hover,
+    li a:hover,
+    .special a.active,
+    li a.active {
+      color: var(--ink);
+    }
+
+    /* The left rule lives only on nested items; the top-level entries
+       (Dashboard, Graph, and the root concept/directory links) sit flush with
+       no border. Thin/faint when inactive, thick full-ink when active, and
+       lightened on hover. */
+    ul ul a {
+      border-left: 2px solid var(--edge);
+      padding-left: 0.75rem;
+    }
+    ul ul a:hover {
+      border-left-color: color-mix(in oklab, var(--ink) 50%, var(--edge));
+    }
+    ul ul a.active {
+      border-left-width: 2px;
+      border-left-color: var(--ink);
+      padding-left: calc(0.75rem - 1px); /* absorb the +1px border so text stays put */
+    }
+    /* Submenu heading row: the directory link, then its collapse toggle
+       pinned to the far right. `aria-expanded` on the toggle carries the
+       whole collapse state — the caret's direction and the submenu's
+       visibility both derive from it, so the accessible state cannot drift
+       from the rendered one. Pages ship expanded; the nav boot scripts
+       apply the persisted closed set (pre-paint as an injected style, then
+       as aria state on the toggles). */
+    .dir-row {
+      @apply flex items-center gap-1;
+    }
+    .dir-row > .dir {
+      /* Ellipsis instead of wrapping under the caret. */
+      @apply min-w-0 flex-1 truncate;
+    }
+    .dir-toggle {
+      @apply flex shrink-0 cursor-pointer items-center justify-center rounded;
+      width: 1.25rem;
+      height: 1.25rem;
+      /* Dimmer than the row's label so it reads as an affordance. */
+      color: color-mix(in oklab, var(--ink) 55%, var(--surface));
+    }
+    .dir-toggle:hover {
+      color: var(--ink);
+      background: color-mix(in oklab, var(--ink) 8%, transparent);
+    }
+    /* Caret down while open, a quarter turn counter-clockwise (pointing
+       right) while closed. */
+    .dir-caret {
+      transition: transform 120ms ease;
+    }
+    .dir-toggle[aria-expanded="false"] .dir-caret {
+      transform: rotate(-90deg);
+    }
+    li:has(> .dir-row > .dir-toggle[aria-expanded="false"]) > ul {
+      @apply hidden;
+    }
+    li {
+      @apply list-none;
+    }
+    ul {
+      @apply m-0;
+    }
+    & > ul {
+      @apply pl-0;
+    }
+  }
+
+  main {
+    /* Centered in the content column so collapsing the nav doesn't shove
+       the page left — the column grows and the content stays centered. */
+    @apply mx-auto min-w-0;
+    padding: 2rem 4rem;
+    max-width: 80rem;
+    width: 100%;
+  }
+  main > h1 {
+    @apply text-3xl font-bold;
+    margin: 0 0 0.5rem;
+  }
+
+  .panel {
+    @apply rounded-lg;
+    border: 1px solid var(--edge);
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    background: var(--panel-bg);
+
+    h3 {
+      @apply uppercase;
+      margin: 0.25rem 0 0.5rem;
+      font-size: 0.95em;
+      letter-spacing: 0.04em;
+      opacity: 0.75;
+    }
+  }
+
+  .meta-grid {
+    @apply m-0 grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.15rem 1rem;
+
+    dt {
+      @apply font-semibold;
+      opacity: 0.8;
+    }
+    dd {
+      @apply m-0;
+    }
+  }
+
+  .badge {
+    /* Soft-filled badge: a tinted background, a subtle border, and strong
+       text, all derived from one --badge-color so each variant only sets that
+       single token. Defaults to neutral ink, which renders plain tags gray. */
+    --badge-color: var(--ink);
+    @apply inline-block whitespace-nowrap rounded text-xs font-medium;
+    padding: 0.125rem 0.375rem; /* py-0.5 px-1.5 */
+    color: var(--badge-color);
+    /* --surface first so the auto-generated fallback (for browsers without
+       color-mix) is the readable surface color, not the badge color. */
+    background: color-mix(in oklab, var(--surface) 88%, var(--badge-color));
+    border: 1px solid color-mix(in oklab, var(--surface) 68%, var(--badge-color));
+  }
+  .badge.stale {
+    --badge-color: var(--danger);
+  }
+  .badge.fresh {
+    --badge-color: var(--status-stable);
+  }
+  .badge.tier-unverified {
+    --badge-color: var(--tier-unverified);
+  }
+  .badge.tier-machine {
+    --badge-color: var(--tier-machine);
+  }
+  .badge.tier-human {
+    --badge-color: var(--tier-human);
+  }
+  .badge.status-draft {
+    --badge-color: var(--status-draft);
+  }
+  .badge.status-stable {
+    --badge-color: var(--status-stable);
+  }
+  .badge.status-deprecated {
+    --badge-color: var(--status-deprecated);
+  }
+  .badge.status-other {
+    --badge-color: var(--status-other);
+  }
+  .badge.sev-info {
+    --badge-color: var(--sev-info);
+  }
+  .badge.sev-warning {
+    --badge-color: var(--sev-warning);
+  }
+  .badge.sev-error {
+    --badge-color: var(--sev-error);
+  }
+
+  .broken-link {
+    color: var(--danger);
+    text-decoration: line-through;
+  }
+
+  .toc-columns {
+    columns: 2;
+  }
+  @media (max-width: 50rem) {
+    .toc-columns {
+      columns: 1;
+    }
+  }
+
+  .pagerow {
+    @apply flex flex-wrap;
+    gap: 2rem;
+
+    section {
+      @apply min-w-0;
+      flex: 1 1 14rem;
+    }
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  pre.mermaid {
+    @apply overflow-x-auto rounded-lg border border-[color:var(--edge)] p-4 my-4;
+    background: var(--mermaid-bg);
+
+    svg {
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+      display: block;
+    }
+  }
+  pre.mermaid[data-processed] {
+    @apply p-4;
+  }
+}

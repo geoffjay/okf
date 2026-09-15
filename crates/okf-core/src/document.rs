@@ -195,10 +195,13 @@ impl Document {
             .is_some_and(|value| !value.is_empty_value())
     }
 
-    /// Extracts all markdown links found in the body.
+    /// Extracts all markdown links found in the body, with `[[target]]`
+    /// wikilinks expanded to standard links first (see
+    /// [`crate::markdown::expand_wikilinks`]), so every consumer — link
+    /// graph, backlinks, validators, search — sees one syntax.
     #[must_use]
     pub fn links(&self) -> Vec<Link> {
-        links::extract_links(&self.body)
+        links::extract_links(&crate::markdown::expand_wikilinks(&self.body).0)
     }
 
     /// The non-blank lines under a top-level `# heading` in the body, up to the

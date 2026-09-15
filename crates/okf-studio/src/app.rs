@@ -1687,6 +1687,17 @@ impl App {
                 }
             }
             crate::markdown::FocusKind::Link { target, kind, .. } => {
+                // An in-document anchor (what `[[heading]]` expands to)
+                // jumps to its heading in the doc already on screen.
+                if *kind == okf_core::LinkKind::Anchor {
+                    let slug = target.trim_start_matches('#').to_string();
+                    if let Some(line) = Self::anchor_line(&rendered, &slug) {
+                        self.explorer.scroll = line;
+                    } else {
+                        self.toast(format!("✗ no heading matches `#{slug}`"), true);
+                    }
+                    return;
+                }
                 let link = okf_core::Link {
                     text: String::new(),
                     target: target.clone(),
@@ -1697,7 +1708,26 @@ impl App {
                     .into_iter()
                     .find(|t| snapshot.bundle.contains(t))
                 {
+                    let slug = link
+                        .anchor()
+                        .filter(|a| !a.is_empty())
+                        .map(ToString::to_string);
                     self.open_concept(&resolved);
+                    // A `foo.md#frag` link lands on the heading, mirroring
+                    // the browser's fragment scroll.
+                    if let Some(slug) = slug
+                        && let Some(concept) = snapshot.bundle.get(&resolved)
+                    {
+                        let target_doc = crate::markdown::render_document(
+                            &concept.document.body,
+                            80,
+                            &self.theme,
+                            None,
+                        );
+                        if let Some(line) = Self::anchor_line(&target_doc, &slug) {
+                            self.explorer.scroll = line;
+                        }
+                    }
                 } else if *kind == okf_core::LinkKind::External {
                     self.toast(format!("external: {target}"), false);
                 } else {
@@ -1705,6 +1735,17 @@ impl App {
                 }
             }
         }
+    }
+
+    /// The rendered line of the heading a link fragment names, matching the
+    /// GitHub-style slug every renderer derives with
+    /// [`okf_core::heading_slug`]. `None` when no heading matches — a
+    /// broken anchor, which the spec permits.
+    fn anchor_line(doc: &crate::markdown::RenderedDoc, slug: &str) -> Option<usize> {
+        doc.headings
+            .iter()
+            .find(|h| okf_core::heading_slug(&h.text) == slug)
+            .map(|h| h.line)
     }
 
     /// Jumps the explorer to a concept, recording history.
@@ -1952,8 +1993,8 @@ pub struct DiagRow {
 /// The palette's computed results.
 #[derive(Debug)]
 pub enum PaletteResults {
-    /// Omnisearch hits.
-    Search(Vec<crate::search::SearchHit>),
+    /// Omnisearch hits (metadata first, then body-text rows).
+    Search(Vec<crate::search::SearchHit>, Vec<crate::search::BodyHit>),
     /// Command rows: `(label, key hint, action)`.
     Commands(Vec<(String, String, Action)>),
 }
@@ -2010,10 +2051,12 @@ impl App {
             rows.sort_by_key(|a| std::cmp::Reverse(a.0));
             PaletteResults::Commands(rows.into_iter().map(|(_, row)| row).collect())
         } else {
-            let hits = self.snapshot.as_ref().map_or_else(Vec::new, |snapshot| {
-                snapshot.search.search(&state.input, 50)
+            let snapshot = self.snapshot.as_ref();
+            let hits = snapshot.map_or_else(Vec::new, |s| s.search.search(&state.input, 50));
+            let body_hits = snapshot.map_or_else(Vec::new, |s| {
+                crate::search::search_bodies_indexed(&s.bundle, &s.search, &state.input, 50)
             });
-            PaletteResults::Search(hits)
+            PaletteResults::Search(hits, body_hits)
         }
     }
 
@@ -2137,9 +2180,17 @@ impl App {
                 self.overlays.push(Overlay::Palette(state));
             }
             KeyCode::Enter => match self.palette_results(&state) {
-                PaletteResults::Search(hits) => {
-                    if let Some(hit) = hits.get(state.sel.min(hits.len().saturating_sub(1))) {
-                        let id = hit.id.clone();
+                PaletteResults::Search(hits, body_hits) => {
+                    // One flattened list: metadata rows first, body rows
+                    // after, matching the rendered order.
+                    let len = hits.len() + body_hits.len();
+                    let sel = state.sel.min(len.saturating_sub(1));
+                    let id = if sel < hits.len() {
+                        hits[sel].id.clone()
+                    } else {
+                        body_hits[sel - hits.len()].id.clone()
+                    };
+                    if len > 0 {
                         if self.tab == Tab::Graph {
                             let key = id.to_string();
                             if let Some(&(x, y)) = self.graph.layout.positions.get(&key) {
