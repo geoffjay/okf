@@ -830,6 +830,38 @@ fn config_title_is_used_and_the_option_overrides_it() {
     );
 }
 
+/// The summary names the configuration file the build read and the settings
+/// it supplied. This is the diagnostic that distinguishes "the config took
+/// effect" from "the build never saw it" — a misplaced `.okf/`, a bundle
+/// root one directory up, an `okf` predating the feature.
+#[test]
+fn the_summary_reports_the_config_it_read() {
+    let b = fixture("config-report", false);
+
+    // No file: nothing to report.
+    let summary = run_titled(&b, None);
+    assert_eq!(summary.config, None);
+    assert!(summary.config_settings.is_empty());
+
+    b.write(
+        ".okf/config.yaml",
+        "site:\n  title: Docs\n  fonts:\n    code: \"Maple Mono, monospace\"\n",
+    );
+    let summary = run_titled(&b, None);
+    assert_eq!(
+        summary.config,
+        Some(b.root.join(".okf").join("config.yaml"))
+    );
+    assert_eq!(summary.config_settings, ["title", "fonts.code"]);
+
+    // A file that sets nothing is still reported, with no settings — the
+    // shape that says "read, and it asked for nothing".
+    b.write(".okf/config.yaml", "site:\n");
+    let summary = run_titled(&b, None);
+    assert!(summary.config.is_some());
+    assert!(summary.config_settings.is_empty());
+}
+
 /// Strict tooling: an unknown *key* fails the build with the section's known
 /// keys, an unknown *section* is only noted, and a malformed file reports the
 /// YAML line. Bundle content stays permissive — only the config is strict.

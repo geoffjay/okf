@@ -80,6 +80,12 @@ pub fn fonts_dir(root: &Path) -> PathBuf {
 /// A bundle's `.okf/config.yaml`, reduced to what `okf site` consumes.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SiteConfig {
+    /// The file this configuration came from, absent when the bundle has no
+    /// `.okf/config.yaml`. Reported by the build, because "the file the
+    /// generator actually read" is the one fact that separates a config that
+    /// took effect from one nothing ever saw — a misplaced file, a bundle
+    /// root one directory up, an `okf` predating the feature.
+    pub path: Option<PathBuf>,
     /// `site.title` — the header title, overridden by `okf site --title`.
     pub title: Option<String>,
     /// `site.fonts` — the typography token overrides and self-hosted faces.
@@ -107,7 +113,30 @@ impl SiteConfig {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(e) => return Err(ConfigError::new(path, ConfigErrorKind::Read(e))),
         };
-        Self::parse(&text).map_err(|kind| ConfigError::new(path, kind))
+        let mut config = Self::parse(&text).map_err(|kind| ConfigError::new(path.clone(), kind))?;
+        config.path = Some(path);
+        Ok(config)
+    }
+
+    /// Which `site:` settings this configuration supplies, in schema order —
+    /// the build reports them so an ignored key or an unset section is
+    /// visible without re-reading the file.
+    #[must_use]
+    pub fn settings(&self) -> Vec<&'static str> {
+        let mut settings = Vec::with_capacity(4);
+        if self.title.is_some() {
+            settings.push("title");
+        }
+        if self.fonts.body.is_some() {
+            settings.push("fonts.body");
+        }
+        if self.fonts.code.is_some() {
+            settings.push("fonts.code");
+        }
+        if !self.fonts.files.is_empty() {
+            settings.push("fonts.files");
+        }
+        settings
     }
 
     /// Parses configuration text (the file body).

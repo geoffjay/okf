@@ -863,6 +863,20 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
         summary.pages,
         out_dir.display()
     );
+    // Which config file the build read, and what it supplied: a config that
+    // silently did nothing (wrong bundle root, a key that set nothing) is
+    // otherwise indistinguishable from one that worked.
+    if let Some(path) = &summary.config {
+        if summary.config_settings.is_empty() {
+            println!("  read {} (no site settings)", path.display());
+        } else {
+            println!(
+                "  read {} ({})",
+                path.display(),
+                summary.config_settings.join(", ")
+            );
+        }
+    }
     if summary.mermaid_pages > 0 {
         println!(
             "  {} diagram page(s); mermaid.js vendored under assets/",
@@ -877,6 +891,9 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
     }
     for note in &summary.notes {
         println!("  note: {note}");
+    }
+    if summary.config_settings.contains(&"title") && args.title.is_some() {
+        println!("  note: --title overrode `site.title`");
     }
     Ok(ExitCode::SUCCESS)
 }

@@ -247,7 +247,10 @@ okf site . --title "Docs"    # header title; overrides .okf/config.yaml
   to before, and content stays permissive while the config is strict: an
   unknown key, a bad value, or a named file that is missing fails the build
   (an unknown *section* is only reported, so a config written for a newer
-  `okf` still builds).
+  `okf` still builds). Each build prints the file it read and the settings it
+  supplied — `read docs/.okf/config.yaml (title, fonts.body, fonts.code)` —
+  so a config the build never saw (a `.okf/` above the bundle root, an older
+  `okf`) shows up as a missing line instead of a mystery.
 
 `okf site` is on by default; opt out with `--no-default-features` (see
 [Using as a Rust library](#using-as-a-rust-library)). Built on the

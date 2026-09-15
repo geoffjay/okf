@@ -129,6 +129,13 @@ pub struct SiteSummary {
     /// Concepts whose body carries at least one fenced code block with a
     /// language tag — the pages shiki highlights.
     pub code_pages: usize,
+    /// The `.okf/config.yaml` this build read, absent when the bundle has
+    /// none — the fastest way to tell a configuration that took effect from
+    /// one the build never saw.
+    pub config: Option<PathBuf>,
+    /// Which `site:` settings that file supplied, in schema order (`title`,
+    /// `fonts.body`, `fonts.code`, `fonts.files`).
+    pub config_settings: Vec<&'static str>,
     /// Notes from reading `.okf/config.yaml` — one per section this version
     /// of `okf` ignored, so a config written for a newer release degrades
     /// visibly rather than silently.
@@ -156,6 +163,8 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         ..
     } = options;
     let config = SiteConfig::load(&root)?;
+    let config_settings = config.settings();
+    let config_path = config.path;
     // Precedence: the caller's title (the CLI's `--title`) over the bundle's
     // `site.title` over the built-in default.
     let site_title = title
@@ -247,6 +256,8 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         pages: pages.len(),
         mermaid_pages,
         code_pages,
+        config: config_path,
+        config_settings,
         notes: config.notes,
     })
 }

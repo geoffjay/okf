@@ -67,10 +67,17 @@ depth and over `file://`); mermaid reads the body token for diagram labels.
 A bundle with no `.okf/` emits byte-identical output to a pre-configuration
 build. Content stays permissive, configuration is strict: unknown keys, bad
 values, and missing font files fail the build, while an unknown top-level
-section is only reported (`SiteSummary::notes`). CSS is constructed rather
-than interpolated — quoted family segments, closed vocabularies for
-weight/style, flat ASCII file names — so no configured string can inject
-CSS or escape `.okf/fonts/`.
+section is only reported (`SiteSummary::notes`). `SiteSummary` also names the
+file the build read (`config`) and the settings it supplied
+(`config_settings`), which is what separates a configuration that took effect
+from one the build never saw. CSS is constructed rather than interpolated —
+quoted family segments, closed vocabularies for weight/style, flat ASCII file
+names — so no configured string can inject CSS or escape `.okf/fonts/`.
+
+Family lists name families the *viewer's* browser resolves; a family that is
+neither installed there nor listed under `files:` falls back to the next
+segment, so `files:` is the only way to guarantee a face. Names must match
+the family exactly (`Maple Mono`, not `MapleMono`).
 
 Security: no raw HTML passthrough from markdown bodies (pulldown-cmark's
 `unsafe` stays off), maud escapes every frontmatter interpolation, and
