@@ -132,18 +132,19 @@ impl<'a, I: Iterator<Item = Event<'a>>> Intercept<'a, I> {
 
     /// Whether the code-block info string names mermaid.
     fn is_mermaid(kind: &pulldown_cmark::CodeBlockKind) -> bool {
-        matches!(kind, pulldown_cmark::CodeBlockKind::Fenced(info) if info
-            .split(' ')
-            .next()
-            .unwrap_or("")
-            .eq_ignore_ascii_case("mermaid"))
+        matches!(kind, pulldown_cmark::CodeBlockKind::Fenced(info)
+            if fence_lang(info).eq_ignore_ascii_case("mermaid"))
     }
 
     /// Whether a fence language is worth loading shiki for. Mirrors shiki's
     /// own `isPlainLang`: `text`, `plain`, `txt`, and `plaintext` produce no
-    /// tokens, so they render as the plain `<pre>` either way.
+    /// tokens, so they render as the plain `<pre>` either way. Info strings
+    /// are case-insensitive, so the comparison is too.
     fn is_highlightable(lang: &str) -> bool {
-        !lang.is_empty() && !matches!(lang, "text" | "plain" | "txt" | "plaintext")
+        !lang.is_empty()
+            && !["text", "plain", "txt", "plaintext"]
+                .iter()
+                .any(|plain| lang.eq_ignore_ascii_case(plain))
     }
 
     /// Buffers a heading's events to compute its slug, then re-emits the
@@ -222,7 +223,7 @@ impl<'a, I: Iterator<Item = Event<'a>>> Iterator for Intercept<'a, I> {
             // list is excluded — `text`/`plain` fences render no tokens,
             // so pages carrying only those never load the 9.6 MB bundle.
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info)))
-                if Self::is_highlightable(info.split(' ').next().unwrap_or("")) =>
+                if Self::is_highlightable(fence_lang(&info)) =>
             {
                 self.has_shiki = true;
                 Some(Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))))
@@ -231,6 +232,24 @@ impl<'a, I: Iterator<Item = Event<'a>>> Iterator for Intercept<'a, I> {
             other => Some(other),
         }
     }
+}
+
+/// The language token of a fence info string: its leading run of
+/// identifier characters.
+///
+/// Markdown carries highlighter directives in the info string in two
+/// shapes — space-separated (` ```rust ignore `) and comma-separated
+/// (` ```rust,no_run `, the rustdoc convention) — and neither belongs in
+/// the `language-*` class the shiki boot harvests: shiki's registry has no
+/// `rust,no_run`, so an unnormalized tag silently renders unhighlighted.
+/// `-`, `+`, `#`, and `_` stay in the token: `objective-c`, `c++`, and
+/// `c#` are real shiki ids.
+fn fence_lang(info: &str) -> &str {
+    let info = info.trim_start();
+    let end = info
+        .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '+' | '#' | '_')))
+        .unwrap_or(info.len());
+    &info[..end]
 }
 
 /// Escapes `&`, `<`, `>` so diagram source survives inside the `<pre>` as
@@ -304,7 +323,10 @@ where
                 Tag::BlockQuote(_) => out.push_str("<blockquote class=\"md-quote\">"),
                 Tag::CodeBlock(kind) => match kind {
                     CodeBlockKind::Fenced(info) => {
-                        let lang = info.split(' ').next().unwrap_or("");
+                        // Directives (`rust,no_run`, `js {1,3}`) are not
+                        // part of the language, and shiki's registry keys
+                        // on the bare id.
+                        let lang = fence_lang(&info);
                         if lang.is_empty() {
                             out.push_str("<pre class=\"md-pre\"><code class=\"md-code\">");
                         } else {
@@ -714,6 +736,57 @@ mod tests {
             "```plain\nplain fence\n```",
             "```txt\ntxt fence\n```",
             "```plaintext\nplaintext fence\n```",
+        ] {
+            let bundle = bundle_with(body);
+            let rendered = render(
+                &bundle,
+                &id,
+                &bundle.get(&id).unwrap().document.body,
+                "",
+                &out_of,
+            );
+            assert!(!rendered.has_shiki, "{body}");
+        }
+
+        // Highlighter directives are not part of the language. Comma form
+        // is the rustdoc convention and used to emit a bogus
+        // `language-rust,no_run` that matches no shiki grammar, so rust
+        // blocks rendered unhighlighted.
+        for (body, want) in [
+            ("```rust,no_run\nfn main() {}\n```", "language-rust"),
+            ("```rust,ignore,should_panic\nfn main() {}\n```", "language-rust"),
+            ("```rust ignore\nfn main() {}\n```", "language-rust"),
+            ("```js {1,3}\nlet x = 1;\n```", "language-js"),
+            ("```python title=\"x.py\"\nx = 1\n```", "language-python"),
+            // Real ids keep their punctuation.
+            ("```objective-c\nint x;\n```", "language-objective-c"),
+            ("```c++\nint x;\n```", "language-c++"),
+            ("```c#\nint x;\n```", "language-c#"),
+        ] {
+            let bundle = bundle_with(body);
+            let rendered = render(
+                &bundle,
+                &id,
+                &bundle.get(&id).unwrap().document.body,
+                "",
+                &out_of,
+            );
+            assert!(rendered.has_shiki, "{body}");
+            assert!(
+                rendered.html.contains(&format!(r#"<code class="md-code {want}">"#)),
+                "{body} → {want}: {}",
+                rendered.html
+            );
+        }
+
+        // Directives on a plain language still skip the 9.6 MB bundle, and
+        // the plain list is case-insensitive like every info string.
+        for body in [
+            "```text,no_run\nplain\n```",
+            "```Text\nplain\n```",
+            "```TXT\nplain\n```",
+            // Mermaid with directives stays a diagram, not a code block.
+            "```mermaid,foo\nflowchart LR\n  A --> B\n```",
         ] {
             let bundle = bundle_with(body);
             let rendered = render(
