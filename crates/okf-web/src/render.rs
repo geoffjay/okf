@@ -189,6 +189,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                     }
                 }
                 script { (PreEscaped(NAV_TOGGLE_BOOT)) }
+                script { (PreEscaped(NAV_SUBMENU_BOOT)) }
                 script { (PreEscaped(SEARCH_ARM_BOOT)) }
                 script { (PreEscaped(THEME_TOGGLE_BOOT)) }
                 @if wants_mermaid {
@@ -225,10 +226,19 @@ width=\"20\" height=\"20\" aria-hidden=\"true\">\
 <path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>";
 
 /// Applies stored site state before first paint: the theme (`.dark`/`.light`
-/// on `<html>` from `okf-theme`) and the collapsed nav (`.nav-hidden` from
-/// `okf-nav`). Keys absent or unavailable leave both classes off, so the
-/// system color scheme and the expanded nav are the defaults. Runs
+/// on `<html>` from `okf-theme`), the collapsed nav (`.nav-hidden` from
+/// `okf-nav`), and the closed nav submenus (`okf-nav-closed`). Keys absent
+/// or unavailable leave the classes off and every submenu expanded, so the
+/// system color scheme and the fully expanded nav are the defaults. Runs
 /// synchronously in `<head>` to avoid a flash of the wrong state.
+///
+/// The submenu state cannot be an attribute or class here — the nav does
+/// not exist yet — so it is applied as an injected stylesheet keyed on
+/// `li[data-dir]`, mirroring the `aria-expanded` rules in `site.css`. It
+/// outranks them on specificity (`#site-nav`) and `NAV_SUBMENU_BOOT` drops
+/// it once the real aria state is on the toggles. Stored paths go through
+/// `CSS.escape` (an unquoted attribute value is an identifier), so a
+/// hand-written key cannot inject rules.
 const THEME_BOOT: &str = "\
 (function () {\
   try {\
@@ -238,6 +248,20 @@ const THEME_BOOT: &str = "\
     }\
     if (localStorage.getItem('okf-nav') === 'collapsed') {\
       document.documentElement.classList.add('nav-hidden');\
+    }\
+    var closed = JSON.parse(localStorage.getItem('okf-nav-closed') || '[]');\
+    if (Array.isArray(closed) && closed.length) {\
+      var hide = [], turn = [];\
+      for (var i = 0; i < closed.length; i++) {\
+        var sel = '#site-nav li[data-dir=' + CSS.escape(String(closed[i])) + ']';\
+        hide.push(sel + '>ul');\
+        turn.push(sel + '>.dir-row .dir-caret');\
+      }\
+      var st = document.createElement('style');\
+      st.id = 'okf-nav-closed-style';\
+      st.textContent = hide.join(',') + '{display:none}'\
+        + turn.join(',') + '{transform:rotate(-90deg)}';\
+      document.head.appendChild(st);\
     }\
   } catch (e) { /* no localStorage (e.g. privacy mode): defaults */ }\
 })()";
@@ -292,6 +316,48 @@ const NAV_TOGGLE_BOOT: &str = "\
   });\
 })()";
 
+/// Wires the nav's per-directory collapse toggles. `aria-expanded` on each
+/// `.dir-toggle` is the collapse state; the stylesheet turns the caret and
+/// hides the submenu from it. On load the stored closed set is applied and
+/// `THEME_BOOT`'s pre-paint style is dropped; each click flips one
+/// directory and rewrites `okf-nav-closed` — a JSON array of the closed
+/// directory paths, absent when every submenu is open (the default). The
+/// set is re-read before each write so two tabs merge instead of
+/// clobbering.
+const NAV_SUBMENU_BOOT: &str = "\
+(function () {\
+  var nav = document.getElementById('site-nav');\
+  if (!nav) return;\
+  var KEY = 'okf-nav-closed';\
+  function closed() {\
+    try {\
+      var v = JSON.parse(localStorage.getItem(KEY) || '[]');\
+      return Array.isArray(v) ? v : [];\
+    } catch (e) { return []; }\
+  }\
+  var stored = closed();\
+  nav.querySelectorAll('.dir-toggle').forEach(function (btn) {\
+    var li = btn.closest('li[data-dir]');\
+    if (!li) return;\
+    var dir = li.getAttribute('data-dir');\
+    btn.setAttribute('aria-expanded', stored.indexOf(dir) === -1 ? 'true' : 'false');\
+    btn.addEventListener('click', function () {\
+      var open = btn.getAttribute('aria-expanded') !== 'true';\
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');\
+      var set = closed();\
+      var at = set.indexOf(dir);\
+      if (open) { if (at !== -1) set.splice(at, 1); }\
+      else if (at === -1) set.push(dir);\
+      try {\
+        if (set.length) localStorage.setItem(KEY, JSON.stringify(set));\
+        else localStorage.removeItem(KEY);\
+      } catch (e) { /* ignore */ }\
+    });\
+  });\
+  var pre = document.getElementById('okf-nav-closed-style');\
+  if (pre) pre.remove();\
+})()";
+
 /// Arms the header search input: on the first keystroke it injects the
 /// search asset (the generated index + client, a classic script so it works
 /// over `file://`); the client then binds the input and serves the query
@@ -323,6 +389,15 @@ const MENU_ICON: &str = "\
 <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
 stroke-width=\"2\" stroke-linecap=\"round\" width=\"20\" height=\"20\" \
 aria-hidden=\"true\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg>";
+
+/// The submenu caret: one chevron pointing down, which the stylesheet
+/// rotates to point right when its toggle reports `aria-expanded="false"`.
+/// Stroke inherits the button's color like the other glyphs.
+const CARET_ICON: &str = "\
+<svg class=\"dir-caret\" viewBox=\"0 0 24 24\" fill=\"none\" \
+stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" \
+stroke-linejoin=\"round\" width=\"14\" height=\"14\" aria-hidden=\"true\">\
+<path d=\"M6 9l6 6 6-6\"/></svg>";
 
 /// The mermaid bootstrap, a classic inline script placed at the end of
 /// `<body>` so `.mermaid` nodes already exist. Strict security level (the
@@ -449,6 +524,12 @@ struct NavNode {
 impl NavNode {
     /// `prefix` is the page's `../`-chain to the site root; `dir` is this
     /// node's `/`-joined path from the bundle root (empty at the top).
+    ///
+    /// Directory items render as a `.dir-row` (the link plus its collapse
+    /// toggle) over the nested `<ul>`. `data-dir` carries the node's bundle
+    /// path: it keys both the persisted closed set and the pre-paint style
+    /// the boot script injects. Every submenu renders expanded, so a no-JS
+    /// page shows the whole tree.
     fn render(&self, prefix: &str, dir: &str, current_rel: &str) -> Markup {
         html! {
             ul {
@@ -461,8 +542,20 @@ impl NavNode {
                 @for (seg, child) in &self.children {
                     @let child_dir = if dir.is_empty() { seg.clone() } else { format!("{dir}/{seg}") };
                     @let active = format!("{child_dir}/index.html") == current_rel;
-                    li {
-                        a class=(if active { "dir active" } else { "dir" }) href=(format!("{prefix}{child_dir}/index.html")) { (segment_title(seg)) }
+                    @let label = segment_title(seg);
+                    li data-dir=(child_dir) {
+                        div class="dir-row" {
+                            a class=(if active { "dir active" } else { "dir" }) href=(format!("{prefix}{child_dir}/index.html")) { (label) }
+                            // `aria-expanded` is the only collapse state:
+                            // the stylesheet derives both the caret's
+                            // direction and the submenu's visibility from
+                            // it, so the accessible state cannot drift from
+                            // the rendered one.
+                            button class="dir-toggle" type="button" aria-expanded="true"
+                                aria-label=(format!("Toggle {label}")) {
+                                (PreEscaped(CARET_ICON))
+                            }
+                        }
                         (child.render(prefix, &child_dir, current_rel))
                     }
                 }

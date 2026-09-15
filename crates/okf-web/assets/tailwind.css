@@ -28,7 +28,7 @@
   --surface: oklch(96.3% 0.002 197.1); /* mist-100 */
   --ink: oklch(14.8% 0.004 228.8); /* mist-950 */
   --edge: oklch(87.2% 0.007 219.6); /* mist-300 */
-  --link: oklch(48.8% 0.243 264.376); /* blue-700 */
+  --link: oklch(49.1% 0.27 292.581); /* violet-700 */
 
   --panel-bg: oklch(98.7% 0.002 197.1); /* mist-50 */
   --code-bg: oklch(92.5% 0.005 214.3); /* mist-200 */
@@ -57,7 +57,7 @@
     --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
     --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
     --edge: oklch(37.8% 0.015 216); /* mist-700 */
-    --link: oklch(80.9% 0.105 251.813); /* blue-300 */
+    --link: oklch(81.1% 0.111 293.571); /* violet-300 */
     --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
     --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
     --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
@@ -79,7 +79,7 @@
   --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
   --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
   --edge: oklch(37.8% 0.015 216); /* mist-700 */
-  --link: oklch(80.9% 0.105 251.813); /* blue-300 */
+  --link: oklch(81.1% 0.111 293.571); /* violet-300 */
   --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
   --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
   --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
@@ -434,6 +434,42 @@
       border-left-width: 2px;
       border-left-color: var(--ink);
       padding-left: calc(0.75rem - 1px); /* absorb the +1px border so text stays put */
+    }
+    /* Submenu heading row: the directory link, then its collapse toggle
+       pinned to the far right. `aria-expanded` on the toggle carries the
+       whole collapse state — the caret's direction and the submenu's
+       visibility both derive from it, so the accessible state cannot drift
+       from the rendered one. Pages ship expanded; the nav boot scripts
+       apply the persisted closed set (pre-paint as an injected style, then
+       as aria state on the toggles). */
+    .dir-row {
+      @apply flex items-center gap-1;
+    }
+    .dir-row > .dir {
+      /* Ellipsis instead of wrapping under the caret. */
+      @apply min-w-0 flex-1 truncate;
+    }
+    .dir-toggle {
+      @apply flex shrink-0 cursor-pointer items-center justify-center rounded;
+      width: 1.25rem;
+      height: 1.25rem;
+      /* Dimmer than the row's label so it reads as an affordance. */
+      color: color-mix(in oklab, var(--ink) 55%, var(--surface));
+    }
+    .dir-toggle:hover {
+      color: var(--ink);
+      background: color-mix(in oklab, var(--ink) 8%, transparent);
+    }
+    /* Caret down while open, a quarter turn counter-clockwise (pointing
+       right) while closed. */
+    .dir-caret {
+      transition: transform 120ms ease;
+    }
+    .dir-toggle[aria-expanded="false"] .dir-caret {
+      transform: rotate(-90deg);
+    }
+    li:has(> .dir-row > .dir-toggle[aria-expanded="false"]) > ul {
+      @apply hidden;
     }
     li {
       @apply list-none;

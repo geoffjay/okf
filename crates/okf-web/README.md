@@ -15,8 +15,10 @@ What it emits:
 
 - One page per concept at the concept's bundle-relative path (`.md` → `.html`),
   with relative links so the site deploys under any base path.
-- A nav tree mirroring the bundle layout, a trust dashboard
-  (`__okf/dashboard.html`), and a bundle-wide mermaid cross-link graph
+- A nav tree mirroring the bundle layout — every directory is a collapsible
+  submenu with a caret toggle (down when open, right when closed), expanded
+  by default and remembered in `localStorage` — plus a trust dashboard
+  (`__okf/dashboard.html`) and a bundle-wide mermaid cross-link graph
   (`__okf/graph.html`).
 - Rendered mermaid diagrams: ` ```mermaid ` blocks become client-side
   diagrams via a vendored `mermaid.min.js` (MIT; see

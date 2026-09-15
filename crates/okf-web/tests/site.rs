@@ -265,6 +265,7 @@ fn script_tag_in_frontmatter_is_escaped() {
                 || script.contains("localStorage.getItem('okf-nav')")
                 || script.contains("document.querySelector('.theme-btn')")
                 || script.contains("document.getElementById('nav-toggle')")
+                || script.contains("nav.querySelectorAll('.dir-toggle')")
                 || script.contains("mermaid"),
             "unexpected script content: {script}"
         );
@@ -609,6 +610,86 @@ fn nav_marks_the_current_page_active() {
     assert!(
         pol.contains(r#"<a class="dir active" href="../policies/index.html">Policies</a>"#),
         "directory link is active on its index page: {pol}"
+    );
+}
+
+/// Collapsible nav submenus: every directory row ships a caret toggle,
+/// renders expanded, and is wired to the persisted closed set. The
+/// stylesheet half of the contract is asserted too — the toggle only does
+/// anything because the compiled `site.css` collapses on its
+/// `aria-expanded` state.
+#[test]
+fn nav_submenus_are_collapsible_and_default_to_expanded() {
+    let b = TestBundle::new("nav-collapse");
+    b.write("index.md", "---\nokf_version: \"0.2\"\n---\n\n# Index\n");
+    b.write(
+        "log.md",
+        "# Update Log\n\n## 2026-08-20\n* **Update**: init.\n",
+    );
+    b.write(
+        "policies/travel.md",
+        "---\ntype: Policy\ntitle: Travel\n---\n\n# Travel\n",
+    );
+    b.write(
+        "policies/nested/deep.md",
+        "---\ntype: Policy\ntitle: Deep\n---\n\n# Deep\n",
+    );
+    run(&b, None);
+    let dash = b.page("index.html");
+    let nav = &dash[dash.find(r#"<nav id="site-nav""#).unwrap()..dash.find("</nav>").unwrap()];
+
+    // The heading row: link, then the caret button on the far right. The
+    // `li`'s `data-dir` is the bundle path the scripts persist.
+    assert!(
+        nav.contains(
+            r#"<li data-dir="policies"><div class="dir-row"><a class="dir" href="policies/index.html">Policies</a><button class="dir-toggle" type="button" aria-expanded="true" aria-label="Toggle Policies"><svg class="dir-caret""#
+        ),
+        "directory row carries its toggle: {nav}"
+    );
+    // Nested directories key on their full path, not the segment.
+    assert!(
+        nav.contains(r#"<li data-dir="policies/nested">"#),
+        "nested dir keys on its full path: {nav}"
+    );
+    // One toggle per directory — leaf links get none.
+    assert_eq!(
+        nav.matches(r#"class="dir-toggle""#).count(),
+        2,
+        "one toggle per directory: {nav}"
+    );
+    // Server-rendered state is expanded, so a no-JS page shows everything.
+    assert!(
+        !nav.contains(r#"aria-expanded="false""#),
+        "submenus render expanded: {nav}"
+    );
+
+    // The collapse rules the toggle drives, from the committed site.css
+    // (inlined into every page). Regenerate with `cargo xtask tailwind`.
+    assert!(
+        dash.contains(".tree li:has(>.dir-row>.dir-toggle[aria-expanded=false])>ul{display:none}"),
+        "stylesheet collapses closed submenus; regenerate site.css"
+    );
+    assert!(
+        dash.contains(
+            ".tree .dir-toggle[aria-expanded=false] .dir-caret{transform:rotate(-90deg)}"
+        ),
+        "stylesheet turns the caret right when closed; regenerate site.css"
+    );
+
+    // Persistence: the pre-paint boot reads the closed set and the toggle
+    // script writes it back, dropping the boot style once aria is authoritative.
+    assert!(
+        dash.contains("localStorage.getItem('okf-nav-closed')"),
+        "boot reads the closed set: {dash}"
+    );
+    assert!(
+        dash.contains("localStorage.setItem(KEY, JSON.stringify(set))")
+            && dash.contains("localStorage.removeItem(KEY)"),
+        "toggle persists the closed set: {dash}"
+    );
+    assert!(
+        dash.contains("document.getElementById('okf-nav-closed-style')"),
+        "toggle script drops the pre-paint style: {dash}"
     );
 }
 
