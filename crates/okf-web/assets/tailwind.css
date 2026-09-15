@@ -11,7 +11,6 @@
  * a template that this file does not `@apply`.
  */
 @import "tailwindcss" source(none);
-@import "./colors.css";
 
 /*
  * Palette and surface tokens as plain custom properties (not `@theme`, which
