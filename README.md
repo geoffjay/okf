@@ -182,6 +182,7 @@ diagrams for real, in the browser.
 okf site [bundle]            # writes <bundle>/site by default
 okf site . --out public      # choose the output directory
 okf site . --today 2026-07-01  # pin staleness for reproducible builds
+okf site . --title "Docs"    # header title; overrides .okf/config.yaml
 ```
 
 - **Pure build-time generation.** A Rust binary in, a directory of HTML out —
@@ -214,6 +215,39 @@ okf site . --today 2026-07-01  # pin staleness for reproducible builds
 - **Dashboard and graph.** A trust dashboard (tier distribution, attention
   queue, actor stats — the numbers agree with `okf info` / `okf trust`) plus a
   bundle-wide mermaid cross-link graph.
+- **Per-bundle settings in the bundle.** A bundle may pin its site settings in
+  `.okf/config.yaml` — a dot-directory every OKF walker ignores, so
+  configuration never becomes content and never shows up in `okf validate`,
+  `okf lint`, or the link graph:
+
+  ```yaml
+  # .okf/config.yaml
+  site:
+    title: "Travel knowledge"      # `okf site --title` still overrides this
+    fonts:
+      body: "Newsreader, Georgia, serif"
+      code: "JetBrains Mono, ui-monospace, monospace"
+      files:                       # self-hosted: .okf/fonts/<file>
+        - family: Newsreader
+          file: newsreader-400.woff2
+          weight: 400
+        - family: Newsreader
+          file: newsreader-700i.woff2
+          weight: 700
+          style: italic
+  ```
+
+  Fonts resolve through two CSS custom properties (`--font-body`,
+  `--font-code`), so a configured bundle gets a generated
+  `assets/fonts.css` — `@font-face` rules for the copied files plus a
+  `:root` token override — linked after the inline stylesheet. Files are
+  copied to `assets/fonts/`, never fetched from a CDN, so the site still
+  deploys offline and opens over `file://`; mermaid diagrams pick up the
+  body family too. Bundles that configure nothing get byte-identical output
+  to before, and content stays permissive while the config is strict: an
+  unknown key, a bad value, or a named file that is missing fails the build
+  (an unknown *section* is only reported, so a config written for a newer
+  `okf` still builds).
 
 `okf site` is on by default; opt out with `--no-default-features` (see
 [Using as a Rust library](#using-as-a-rust-library)). Built on the

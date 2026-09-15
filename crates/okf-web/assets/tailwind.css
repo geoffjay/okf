@@ -25,6 +25,20 @@
      (system preference) or the .dark class (explicit user choice). */
   color-scheme: light;
 
+  /*
+   * Typography tokens. Every font in the site resolves through these two, so
+   * one override changes the whole face: `okf site` writes a generated
+   * `assets/fonts.css` from a bundle's `.okf/config.yaml` and links it after
+   * this stylesheet, where its `:root` block wins the cascade tie. Both
+   * defaults restate today's computed values — system sans on `body`, and
+   * for code the same stack Tailwind's preflight applies through
+   * `--default-mono-font-family` — so the tokens change nothing on their own.
+   */
+  --font-body: system-ui, sans-serif;
+  --font-code:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
   --mauve-50: oklch(98.5% 0 none);
   --mauve-100: oklch(96% 0.003 325.6);
   --mauve-200: oklch(92.2% 0.005 325.62);
@@ -114,7 +128,12 @@
 @layer base {
   body {
     @apply m-0;
-    font: 16px/1.6 system-ui, sans-serif;
+    /* Split out of the `font:` shorthand: a `var()` that fails to substitute
+       invalidates its whole declaration at computed-value time, which would
+       take the size and line height down with the family. */
+    font-size: 16px;
+    line-height: 1.6;
+    font-family: var(--font-body);
     background: var(--surface);
     color: var(--ink);
   }
@@ -130,6 +149,7 @@
   }
 
   code {
+    font-family: var(--font-code);
     background: var(--code-bg);
     border-radius: 3px;
     padding: 0.1em 0.3em;
@@ -137,6 +157,7 @@
 
   pre {
     @apply overflow-x-auto;
+    font-family: var(--font-code);
   }
 
   pre code {

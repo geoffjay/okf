@@ -20,7 +20,7 @@
 //!   search       <query...> Search metadata and body text (--json, --today, --limit).
 //!   parse        <file>     Parse one concept document and print its structure (--json).
 //!   studio       [bundle]   Open the interactive terminal studio (--today, --tab, --no-watch).
-//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out).
+//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out, --title).
 //! ```
 
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -744,7 +744,8 @@ pub struct SiteArgs {
     #[arg(long, value_name = "DIR")]
     pub out: Option<PathBuf>,
 
-    /// Site title shown in the header (defaults to "okf site")
+    /// Site title shown in the header (overrides `site.title` in
+    /// `.okf/config.yaml`; defaults to "okf site")
     #[arg(long, value_name = "TITLE")]
     pub title: Option<String>,
 }
@@ -843,7 +844,8 @@ fn cmd_studio(args: &StudioArgs) -> Result<ExitCode, CliError> {
 /// Generates the static site. The bundle is loaded once *before* okf-web
 /// runs so a missing or unreadable bundle fails early with the same
 /// well-coded exit as every other subcommand. Site never takes `--json`:
-/// like studio, it *is* the presentation.
+/// like studio, it *is* the presentation. Per-bundle settings come from
+/// `.okf/config.yaml`, which okf-web reads itself; `--title` overrides it.
 #[cfg(feature = "site")]
 fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
     let _ = load(&args.bundle)?;
@@ -872,6 +874,9 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
             "  {} code page(s); shiki.js vendored under assets/",
             summary.code_pages
         );
+    }
+    for note in &summary.notes {
+        println!("  note: {note}");
     }
     Ok(ExitCode::SUCCESS)
 }

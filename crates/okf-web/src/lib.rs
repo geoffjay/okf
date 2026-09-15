@@ -32,6 +32,19 @@
 //!   when some page carries a fenced code block with a language tag; pages
 //!   highlight client-side in GitHub light/dark themes driven by the site's
 //!   theme classes.
+//! - `assets/fonts.css` plus `assets/fonts/`, written only when the bundle
+//!   configures fonts, and linked after the inline stylesheet so its token
+//!   overrides win.
+//!
+//! ## Per-bundle configuration
+//!
+//! A bundle may pin its site settings in `.okf/config.yaml`, read by
+//! [`config::SiteConfig`] — a header title and the typography tokens, with
+//! self-hosted font files under `.okf/fonts/`. The directory is invisible to
+//! every OKF walker, so configuration never becomes content. Caller-supplied
+//! options win over the file: [`SiteOptions::title`] overrides `site.title`,
+//! which overrides [`DEFAULT_SITE_TITLE`]. A bundle with no `.okf/` generates
+//! byte-identical output to a pre-configuration build.
 //!
 //! ## Security posture
 //!
@@ -53,15 +66,17 @@
 #![warn(missing_docs)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
+pub mod config;
 pub mod markdown;
 pub mod render;
 pub mod search;
 
+use config::{Fonts, SiteConfig};
 use okf_core::{Bundle, BundleError, ConceptId, Date};
-use render::{SitePage, write_page};
+use render::{SiteChrome, SitePage, write_page};
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The vendored mermaid.min.js (12.0.0, MIT; see `assets/vendor/README.md`).
 const MERMAID_JS: &[u8] = include_bytes!("../assets/vendor/mermaid.min.js");
@@ -80,7 +95,9 @@ pub struct SiteOptions {
     pub out_dir: PathBuf,
     /// The date staleness is evaluated against; `None` uses the system clock.
     pub today: Option<Date>,
-    /// The site title shown in the header; `None` uses [`DEFAULT_SITE_TITLE`].
+    /// The site title shown in the header. `None` falls back to the bundle's
+    /// `site.title` (see [`config::SiteConfig`]), then to
+    /// [`DEFAULT_SITE_TITLE`].
     pub title: Option<String>,
 }
 
@@ -100,16 +117,10 @@ impl SiteOptions {
             day: 1,
         })
     }
-
-    /// The effective site title, from `title` or [`DEFAULT_SITE_TITLE`].
-    #[must_use]
-    pub fn effective_title(&self) -> &str {
-        self.title.as_deref().unwrap_or(DEFAULT_SITE_TITLE)
-    }
 }
 
 /// The `okf site` result reported to the caller.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SiteSummary {
     /// Pages written, including directory indexes and special pages.
     pub pages: usize,
@@ -118,23 +129,39 @@ pub struct SiteSummary {
     /// Concepts whose body carries at least one fenced code block with a
     /// language tag — the pages shiki highlights.
     pub code_pages: usize,
+    /// Notes from reading `.okf/config.yaml` — one per section this version
+    /// of `okf` ignored, so a config written for a newer release degrades
+    /// visibly rather than silently.
+    pub notes: Vec<String>,
 }
 
 /// Generates the site for the bundle at `options.root` into `options.out_dir`.
 ///
 /// Bundle problems are *not* errors here, matching okf-core's permissive
-/// loader: parse errors and broken links render as visible content. Only
-/// I/O failures (an unreadable bundle root, an unwritable output directory)
-/// are returned as errors.
+/// loader: parse errors and broken links render as visible content. The
+/// bundle's own `.okf/config.yaml` is held to the opposite standard: a typo
+/// there fails the build rather than silently doing nothing.
 ///
 /// # Errors
 ///
 /// Returns an error if the bundle root cannot be loaded (see
-/// [`Bundle::load`]) or if any output file cannot be written.
+/// [`Bundle::load`]), if `.okf/config.yaml` exists and cannot be used (see
+/// [`config::SiteConfig::load`]), or if any output file cannot be written.
 pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     let today = options.effective_today();
-    let site_title = options.effective_title().to_string();
-    let SiteOptions { root, out_dir, .. } = options;
+    let SiteOptions {
+        root,
+        out_dir,
+        title,
+        ..
+    } = options;
+    let config = SiteConfig::load(&root)?;
+    // Precedence: the caller's title (the CLI's `--title`) over the bundle's
+    // `site.title` over the built-in default.
+    let site_title = title
+        .or(config.title)
+        .unwrap_or_else(|| DEFAULT_SITE_TITLE.to_string());
+    let fonts = config.fonts;
     let bundle = Bundle::load(&root)?;
 
     // Health badges from the same calls the studio snapshot makes.
@@ -178,10 +205,16 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     let bundle_has_mermaid = pages.iter().any(|p| p.has_mermaid);
     let bundle_has_code = pages.iter().any(|p| p.has_shiki);
 
+    let chrome = SiteChrome {
+        title: &site_title,
+        has_mermaid: bundle_has_mermaid,
+        has_fonts: !fonts.is_empty(),
+    };
+
     fs::create_dir_all(&out_dir).map_err(|e| SiteError::Io(e, out_dir.clone()))?;
 
     for page in &pages {
-        write_page(page, &bundle, &out_dir, bundle_has_mermaid, &site_title)?;
+        write_page(page, &bundle, &out_dir, chrome)?;
     }
 
     {
@@ -199,13 +232,59 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
             let shiki_path = assets_dir.join("shiki.min.js");
             fs::write(&shiki_path, SHIKI_JS).map_err(|e| SiteError::Io(e, shiki_path.clone()))?;
         }
+        // Fonts are opt-in: a bundle that configures none gets no stylesheet
+        // and no `<link>`, leaving the committed inline CSS the only source
+        // of typography.
+        if !fonts.is_empty() {
+            let fonts_css = assets_dir.join("fonts.css");
+            fs::write(&fonts_css, fonts.to_css())
+                .map_err(|e| SiteError::Io(e, fonts_css.clone()))?;
+            copy_font_files(&root, &assets_dir, &fonts)?;
+        }
     }
 
     Ok(SiteSummary {
         pages: pages.len(),
         mermaid_pages,
         code_pages,
+        notes: config.notes,
     })
+}
+
+/// Copies the configured faces from `.okf/fonts/` into `assets/fonts/`.
+///
+/// Names are deduplicated, so two `@font-face` entries cut from one file
+/// copy it once. A name the bundle does not actually carry is a
+/// *configuration* error rather than an I/O one: the config promised the
+/// file, and the name it used is what the report has to point at.
+fn copy_font_files(root: &Path, assets_dir: &Path, fonts: &Fonts) -> Result<(), SiteError> {
+    let names: std::collections::BTreeSet<&str> =
+        fonts.files.iter().map(config::FontFile::file).collect();
+    if names.is_empty() {
+        return Ok(());
+    }
+    let src_dir = config::fonts_dir(root);
+    let dest_dir = assets_dir.join("fonts");
+    fs::create_dir_all(&dest_dir).map_err(|e| SiteError::Io(e, dest_dir.clone()))?;
+    for name in names {
+        let src = src_dir.join(name);
+        let dest = dest_dir.join(name);
+        match fs::copy(&src, &dest) {
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(SiteError::Config(config::ConfigError::invalid(
+                    root,
+                    format!(
+                        "`site.fonts.files` names `{name}`, which is not in \
+                         `{}/`",
+                        config::FONTS_DIR
+                    ),
+                )));
+            }
+            Err(e) => return Err(SiteError::Io(e, src)),
+        }
+    }
+    Ok(())
 }
 
 /// Where a generated page lives in the output tree.
@@ -256,6 +335,8 @@ impl PagePath {
 pub enum SiteError {
     /// The bundle could not be loaded.
     Bundle(BundleError),
+    /// The bundle's `.okf/config.yaml` could not be used.
+    Config(config::ConfigError),
     /// An output file could not be written.
     Io(io::Error, PathBuf),
 }
@@ -264,6 +345,7 @@ impl std::fmt::Display for SiteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Bundle(e) => write!(f, "bundle: {e}"),
+            Self::Config(e) => write!(f, "config: {e}"),
             Self::Io(e, path) => write!(f, "{}: {e}", path.display()),
         }
     }
@@ -274,6 +356,12 @@ impl std::error::Error for SiteError {}
 impl From<BundleError> for SiteError {
     fn from(e: BundleError) -> Self {
         Self::Bundle(e)
+    }
+}
+
+impl From<config::ConfigError> for SiteError {
+    fn from(e: config::ConfigError) -> Self {
+        Self::Config(e)
     }
 }
 

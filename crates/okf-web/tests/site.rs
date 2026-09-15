@@ -796,3 +796,209 @@ fn search_index_heading_anchors_match_emitted_ids() {
     let travel_page = b.page("policies/travel.html");
     assert!(travel_page.contains("<h1 id=\"travel-policy\""));
 }
+
+/// Generates with an explicit `--title`-equivalent override.
+fn run_titled(b: &TestBundle, title: Option<&str>) -> okf_web::SiteSummary {
+    generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: title.map(str::to_string),
+    })
+    .unwrap()
+}
+
+/// The header title's precedence chain: `SiteOptions::title` (the CLI's
+/// `--title`) over `site.title` in `.okf/config.yaml` over the default.
+#[test]
+fn config_title_is_used_and_the_option_overrides_it() {
+    let b = fixture("config-title", false);
+    b.write(".okf/config.yaml", "site:\n  title: Travel knowledge\n");
+
+    run_titled(&b, None);
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"<a class="site-name" href="index.html">Travel knowledge</a>"#),
+        "config title in header: {dash}"
+    );
+
+    run_titled(&b, Some("Flag Wins"));
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"<a class="site-name" href="index.html">Flag Wins</a>"#),
+        "option overrides config: {dash}"
+    );
+}
+
+/// Strict tooling: an unknown *key* fails the build with the section's known
+/// keys, an unknown *section* is only noted, and a malformed file reports the
+/// YAML line. Bundle content stays permissive — only the config is strict.
+#[test]
+fn config_problems_fail_the_build_or_are_noted() {
+    let b = fixture("config-strict", false);
+
+    b.write(".okf/config.yaml", "site:\n  titel: Oops\n");
+    let err = generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: None,
+    })
+    .unwrap_err();
+    assert!(matches!(err, okf_web::SiteError::Config(_)), "{err:?}");
+    let message = err.to_string();
+    assert!(message.contains("unknown key `titel`"), "{message}");
+    assert!(message.contains("known keys: title, fonts"), "{message}");
+    assert!(message.contains(".okf/config.yaml"), "{message}");
+
+    b.write(".okf/config.yaml", "site:\n  title: [oops\n");
+    let message = generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: None,
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(message.contains("line 2"), "yaml line reported: {message}");
+
+    b.write(
+        ".okf/config.yaml",
+        "studio:\n  theme: dark\nsite:\n  title: Docs\n",
+    );
+    let summary = run_titled(&b, None);
+    assert_eq!(summary.notes.len(), 1, "{:?}", summary.notes);
+    assert!(
+        summary.notes[0].contains("unknown section `studio`"),
+        "{:?}",
+        summary.notes
+    );
+}
+
+/// Fonts are opt-in: with no config the build writes no font stylesheet and
+/// links none, so the committed inline CSS stays the only typography source.
+#[test]
+fn a_bundle_without_config_gets_no_font_assets() {
+    let b = fixture("fonts-absent", true);
+    run(&b, None);
+
+    assert!(!b.site().join("assets/fonts.css").exists());
+    assert!(!b.site().join("assets/fonts").exists());
+    for page in ["index.html", "policies/travel.html", "__okf/graph.html"] {
+        let html = b.page(page);
+        assert!(
+            !html.contains("<link rel=\"stylesheet\""),
+            "no stylesheet link on {page}: {html}"
+        );
+        assert!(!html.contains("fonts.css"), "no fonts.css on {page}");
+    }
+}
+
+/// Family settings become a `:root` token override in `assets/fonts.css`,
+/// linked after the inline stylesheet at every page depth, and the mermaid
+/// boot reads the same token so diagrams follow the prose.
+#[test]
+fn font_families_emit_a_linked_token_override() {
+    let b = fixture("fonts-families", true);
+    b.write(
+        ".okf/config.yaml",
+        "site:\n  fonts:\n    body: \"Newsreader, Georgia, serif\"\n    \
+         code: \"JetBrains Mono, ui-monospace, monospace\"\n",
+    );
+    run(&b, None);
+
+    let css = b.page("assets/fonts.css");
+    assert!(
+        css.contains(
+            ":root {\n  --font-body: \"Newsreader\", \"Georgia\", serif;\n  \
+                      --font-code: \"JetBrains Mono\", ui-monospace, monospace;\n}\n"
+        ),
+        "token override: {css}"
+    );
+    assert!(!css.contains("@font-face"), "no faces configured: {css}");
+
+    // Linked after the inline <style>, with a depth-correct href.
+    let dash = b.page("index.html");
+    let style_end = dash.find("</style>").expect("inline stylesheet");
+    let link = dash
+        .find(r#"<link rel="stylesheet" href="assets/fonts.css">"#)
+        .expect("root page links fonts.css");
+    assert!(link > style_end, "link follows the inline stylesheet");
+    assert!(
+        b.page("policies/travel.html")
+            .contains(r#"<link rel="stylesheet" href="../assets/fonts.css">"#),
+        "nested page climbs one level"
+    );
+    assert!(
+        b.page("__okf/graph.html")
+            .contains(r#"<link rel="stylesheet" href="../assets/fonts.css">"#),
+        "graph page climbs one level"
+    );
+
+    // Diagrams follow the body token rather than a hard-coded family.
+    let graph = b.page("__okf/graph.html");
+    assert!(
+        graph.contains("getComputedStyle(document.documentElement)")
+            && graph.contains("getPropertyValue('--font-body')")
+            && graph.contains("cfg.fontFamily = font"),
+        "mermaid reads the token: {graph}"
+    );
+}
+
+/// Self-hosted faces: the named files are copied into `assets/fonts/` and
+/// described by `@font-face` rules whose `url()` is stylesheet-relative, so
+/// one href works at every page depth (and over `file://`).
+#[test]
+fn font_files_are_copied_and_described() {
+    let b = fixture("fonts-files", false);
+    b.write(".okf/fonts/newsreader-400.woff2", "wOF2-not-really");
+    b.write(".okf/fonts/newsreader-700i.otf", "OTTO-not-really");
+    b.write(
+        ".okf/config.yaml",
+        "site:\n  fonts:\n    body: Newsreader, serif\n    files:\n      \
+         - family: Newsreader\n        file: newsreader-400.woff2\n        weight: 400\n      \
+         - family: Newsreader\n        file: newsreader-700i.otf\n        weight: 700\n        \
+         style: italic\n",
+    );
+    run(&b, None);
+
+    assert_eq!(
+        b.page("assets/fonts/newsreader-400.woff2"),
+        "wOF2-not-really"
+    );
+    assert_eq!(
+        b.page("assets/fonts/newsreader-700i.otf"),
+        "OTTO-not-really"
+    );
+    let css = b.page("assets/fonts.css");
+    assert!(
+        css.contains(
+            "@font-face {\n  font-family: \"Newsreader\";\n  \
+             src: url(\"fonts/newsreader-400.woff2\") format(\"woff2\");\n  \
+             font-style: normal;\n  font-weight: 400;\n  font-display: swap;\n}\n"
+        ),
+        "{css}"
+    );
+    assert!(
+        css.contains("src: url(\"fonts/newsreader-700i.otf\") format(\"opentype\");")
+            && css.contains("font-style: italic;"),
+        "{css}"
+    );
+
+    // A face naming a file the bundle does not carry is a config error.
+    b.write(
+        ".okf/config.yaml",
+        "site:\n  fonts:\n    files:\n      - family: Ghost\n        file: ghost.woff2\n",
+    );
+    let err = generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: None,
+    })
+    .unwrap_err();
+    assert!(matches!(err, okf_web::SiteError::Config(_)), "{err:?}");
+    let message = err.to_string();
+    assert!(message.contains("ghost.woff2"), "{message}");
+    assert!(message.contains(".okf/fonts"), "{message}");
+}

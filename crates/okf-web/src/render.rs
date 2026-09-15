@@ -88,6 +88,20 @@ const SITE_CSS: &str = include_str!("../assets/site.css");
 // (The mermaid bootstrap lives in `mermaid_boot`, emitted per page with a
 // depth-correct asset path; no module-level constant.)
 
+/// The build-wide chrome every page shares: values that come from the site
+/// build rather than from the page's own concept.
+#[derive(Clone, Copy, Debug)]
+pub struct SiteChrome<'a> {
+    /// The header title, linking back to the dashboard.
+    pub title: &'a str,
+    /// Whether this build wrote `assets/mermaid.min.js`; a diagram page in a
+    /// bundle whose asset was skipped must not link it.
+    pub has_mermaid: bool,
+    /// Whether this build wrote `assets/fonts.css`. Pages link it after the
+    /// inline stylesheet, so its `:root` token overrides win the cascade tie.
+    pub has_fonts: bool,
+}
+
 /// Writes one page into the output tree.
 ///
 /// # Errors
@@ -97,8 +111,7 @@ pub fn write_page(
     page: &SitePage,
     bundle: &Bundle,
     out_dir: &std::path::Path,
-    bundle_has_mermaid: bool,
-    site_title: &str,
+    chrome: SiteChrome<'_>,
 ) -> Result<(), crate::SiteError> {
     use std::fs;
 
@@ -107,12 +120,12 @@ pub fn write_page(
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| crate::SiteError::Io(e, parent.to_path_buf()))?;
     }
-    let document = layout(page, bundle, bundle_has_mermaid, site_title);
+    let document = layout(page, bundle, chrome);
     fs::write(&dest, document.into_string()).map_err(|e| crate::SiteError::Io(e, dest.clone()))
 }
 
 /// The full HTML document for one page.
-fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title: &str) -> Markup {
+fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
     let SitePage {
         rel_path,
         title,
@@ -123,7 +136,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
     } = page;
     let prefix = prefix_for(rel_path);
     let current_rel = rel_path.rel();
-    let wants_mermaid = *has_mermaid && bundle_has_mermaid;
+    let wants_mermaid = *has_mermaid && chrome.has_mermaid;
     let wants_shiki = *has_shiki;
     html! {
         (DOCTYPE)
@@ -140,6 +153,13 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                 // default escaping would turn `>` combinators and quoted
                 // font-family names into `&gt;`/`&quot;` and break the rules.
                 style { (PreEscaped(SITE_CSS)) }
+                // The generated font stylesheet, after the inline one so its
+                // token overrides win: an external `<link>` is fine here
+                // because the file is ours and page-depth-relative, and a
+                // failed load leaves the committed defaults in place.
+                @if chrome.has_fonts {
+                    link rel="stylesheet" href=(format!("{prefix}assets/fonts.css"));
+                }
             }
             body {
                 header class="site-header" {
@@ -153,7 +173,7 @@ fn layout(page: &SitePage, bundle: &Bundle, bundle_has_mermaid: bool, site_title
                         // currentColor, so light/dark schemes both work.
                         (PreEscaped(MENU_ICON))
                     }
-                    a class="site-name" href=(format!("{prefix}index.html")) { (site_title) }
+                    a class="site-name" href=(format!("{prefix}index.html")) { (chrome.title) }
                     div class="site-search" {
                         // data-asset: the lazy fetch target for the search
                         // index + client; data-prefix: the depth-correct
@@ -406,6 +426,12 @@ stroke-linejoin=\"round\" width=\"14\" height=\"14\" aria-hidden=\"true\">\
 /// The diagram theme follows the site theme (default in light, `dark` in
 /// dark mode) and re-renders when the theme toggle flips, so labels and
 /// edges stay legible on the dark card.
+///
+/// Diagram labels follow the prose: `fontFamily` is read from the computed
+/// `--font-body` token, so a bundle that overrides the token in its
+/// generated `fonts.css` gets diagrams in the same face with no Rust-side
+/// parameterization. An empty read (no token, impossible with the committed
+/// stylesheet) leaves mermaid's own default alone.
 const fn mermaid_boot() -> &'static str {
     "\
 if (window.mermaid) {\
@@ -423,11 +449,15 @@ if (window.mermaid) {\
       el.textContent = el.dataset.diagram;\
       el.removeAttribute('data-processed');\
     });\
-    mermaid.initialize({\
+    var cfg = {\
       securityLevel: 'strict',\
       startOnLoad: false,\
       theme: dark ? 'dark' : 'default'\
-    });\
+    };\
+    var font = getComputedStyle(document.documentElement)\
+      .getPropertyValue('--font-body').trim();\
+    if (font) cfg.fontFamily = font;\
+    mermaid.initialize(cfg);\
     mermaid.run({ querySelector: 'pre.mermaid', suppressErrors: true })\
       .then(function () {\
         nodes.forEach(function (el) { el.dataset.processed = '1'; });\

@@ -2,7 +2,7 @@
 type: Plan
 title: Per-bundle site configuration and font support for okf site
 description: "Plan for a per-bundle configuration mechanism (.okf/config.yaml with a site section, parsed by okf-core's std-only YAML) plus font support in okf site: typography refactored onto CSS custom-property tokens, per-bundle font families and self-hosted font files emitted as an opt-in generated fonts.css layered over the committed stylesheet - no new dependencies, no upstream-facing surface outside okf-web."
-status: draft
+status: stable
 generated:
   by: omp/main
   at: "2026-09-14T19:30:00Z"

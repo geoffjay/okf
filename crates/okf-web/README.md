@@ -8,7 +8,7 @@ is the deployable one: a build-time pipeline that turns a bundle into a
 directory of HTML — no server, no WASM, no client-side framework.
 
 ```text
-okf site [bundle]   # --today, --out DIR; writes <bundle>/site by default
+okf site [bundle]   # --today, --out DIR, --title; writes <bundle>/site by default
 ```
 
 What it emits:
@@ -37,6 +37,40 @@ What it emits:
 - A single inline stylesheet compiled from Tailwind CSS v4, so pages fetch no
   external CSS (mermaid and shiki are the only external assets, and only on
   pages that use them).
+- A generated `assets/fonts.css` (plus `assets/fonts/`) when the bundle
+  configures fonts — see below — linked after the inline stylesheet so its
+  token overrides win.
+
+Per-bundle configuration: a bundle may pin its site settings in
+`.okf/config.yaml`, read by `okf_web::config::SiteConfig` with okf-core's
+std-only YAML parser (no new dependency). `.okf/` is invisible to every OKF
+walker, so configuration never becomes content.
+
+```yaml
+site:
+  title: "Travel knowledge"      # `okf site --title` overrides this
+  fonts:
+    body: "Newsreader, Georgia, serif"
+    code: "JetBrains Mono, ui-monospace, monospace"
+    files:                       # self-hosted: .okf/fonts/<file>
+      - family: Newsreader
+        file: newsreader-400.woff2
+        weight: 400
+```
+
+Typography resolves through the `--font-body`/`--font-code` custom
+properties, so a font setting is a token override in the generated
+stylesheet — `site.css` stays universal and no bundle needs a Tailwind
+recompile. Faces are copied to `assets/fonts/` and described with
+`@font-face` (stylesheet-relative `url()`, so one href works at every page
+depth and over `file://`); mermaid reads the body token for diagram labels.
+A bundle with no `.okf/` emits byte-identical output to a pre-configuration
+build. Content stays permissive, configuration is strict: unknown keys, bad
+values, and missing font files fail the build, while an unknown top-level
+section is only reported (`SiteSummary::notes`). CSS is constructed rather
+than interpolated — quoted family segments, closed vocabularies for
+weight/style, flat ASCII file names — so no configured string can inject
+CSS or escape `.okf/fonts/`.
 
 Security: no raw HTML passthrough from markdown bodies (pulldown-cmark's
 `unsafe` stays off), maud escapes every frontmatter interpolation, and
