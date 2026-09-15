@@ -281,8 +281,13 @@
   .md-code {
     @apply text-[0.9em];
   }
+  /* A code block is a card — the same recipe `pre.mermaid` uses below:
+     bordered, rounded, padded, with its own surface, so preformatted
+     content reads as a block instead of loose monospace prose. The surface
+     is the inline-code token, so inline and block code agree. */
   .md-pre {
-    @apply overflow-x-auto;
+    @apply overflow-x-auto rounded-lg border border-[color:var(--edge)] p-4 my-4;
+    background: var(--code-bg);
   }
   /* Shiki's highlighted HTML replaces the whole `<pre>`, and its `<code>`
      carries no `md-code` class — size on the block instead so a block does

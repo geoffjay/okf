@@ -30,7 +30,9 @@ What it emits:
   only when some page has code. Highlighter directives after the language
   are ignored, so the rustdoc form (` ```rust,no_run `) highlights like a
   bare ` ```rust `. The escaped source stays in the `<pre>` until the
-  highlight swaps it in, so no-JS degrades gracefully.
+  highlight swaps it in, so no-JS degrades gracefully. Every block —
+  fenced or indented, highlighted or not — renders inside the same
+  bordered, padded card a diagram gets, on the code surface token.
 - Frontmatter panels with trust/status/staleness badges, backlinks, sources
   with OKF footnote→source attribution, headings TOC, and validator/lint
   findings — everything the studio Explorer inspector shows.

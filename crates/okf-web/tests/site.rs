@@ -185,6 +185,50 @@ fn code_pages_ship_shiki_and_load_it_only_on_code_pages() {
     );
 }
 
+/// Code blocks are cards: the writer classes every fenced *and* indented
+/// block `md-pre`, and the compiled stylesheet gives `.md-pre` the same
+/// boxed recipe as `pre.mermaid`, only the surface token differing. The
+/// stylesheet half is asserted too — the card exists only in the committed
+/// `site.css`, so a `tailwind.css` edit without a regenerate is a no-op.
+#[test]
+fn code_blocks_render_as_cards_like_diagrams() {
+    let b = fixture("code-card", false);
+    b.write(
+        "policies/pto.md",
+        "---\ntype: Policy\ntitle: PTO\n---\n\n# Paid time off\n\n\
+         ```rust\nfn main() {}\n```\n\n    indented block\n",
+    );
+    run(&b, None);
+    let page = b.page("policies/pto.html");
+    assert_eq!(
+        page.matches(r#"<pre class="md-pre">"#).count(),
+        2,
+        "fenced and indented blocks both carry md-pre: {page}"
+    );
+
+    // Both rules come from the inlined stylesheet on this very page.
+    let rule = |sel: &str| {
+        let start = page.find(sel).unwrap_or_else(|| {
+            panic!("no {sel} rule in site.css; regenerate with `cargo xtask tailwind`")
+        });
+        let end = start + page[start..].find('}').unwrap();
+        page[start + sel.len()..end].to_string()
+    };
+    let code = rule(".md-pre{");
+    let diagram = rule("pre.mermaid{");
+    assert!(
+        code.contains("border-width:1px")
+            && code.contains("border-color:var(--edge)")
+            && code.contains("background:var(--code-bg)"),
+        "the code card is a bordered box on its own surface: {code}"
+    );
+    assert_eq!(
+        code.replace("var(--code-bg)", "var(--mermaid-bg)"),
+        diagram,
+        "code and diagram cards share one recipe; regenerate site.css"
+    );
+}
+
 #[test]
 fn links_navigate_between_generated_pages() {
     let b = fixture("links", false);
