@@ -5,12 +5,14 @@ description: The crate-level architecture of the okf project — okf-core as the
 tags: [architecture, okf-core, okf-web]
 ---
 
+# OKF Workspace Architecture
+
 The okf project is a Cargo workspace of six crates with one rule at its
 center: **okf-core models the bundle; every other crate consumes it.** No
 crate re-parses markdown or YAML on its own — they all share okf-core's
 permissive loader, link graph, and frontmatter accessors.
 
-# Workspace layout
+## Workspace layout
 
 ```mermaid
 flowchart TD
@@ -44,7 +46,7 @@ Python). okf-studio renders the model interactively in the terminal;
 okf-web renders it once at build time into static HTML. The `okf` binary
 is a thin clap shell over all of them; `cargo okf` delegates to it.
 
-# The one model, three views
+## The one model, three views
 
 okf-core's [`Bundle::load`] is permissive by design: parse errors, broken
 links, and malformed frontmatter never abort a load — they are recorded on
@@ -77,7 +79,7 @@ flowchart LR
 - **okf validator** is the only crate that judges; both views display its
   reports but never duplicate its rules.
 
-# CLI surface
+## CLI surface
 
 The `okf` binary maps every model capability onto a subcommand; the
 interactive studio and the site generator are just the two "view"
@@ -114,7 +116,7 @@ not fatal. `--json` exists on nearly all of them so agents (the "a" in
 OKF's human- *and* agent-friendly design) can drive the same surface
 people do.
 
-# Data flow through the site generator
+## Data flow through the site generator
 
 As the newest consumer, okf-web illustrates the permissive pipeline end
 to end:
@@ -143,7 +145,7 @@ The stylesheet is compiled once with the Tailwind standalone CLI
 (`cargo xtask tailwind`) and committed, so `okf site` itself needs no
 toolchain; the generator embeds it with `include_str!` at build time.
 
-# Design rules worth preserving
+## Design rules worth preserving
 
 1. **One model.** New capability lands in okf-core (or okf-validator for
    judgment), never duplicated in a consumer.

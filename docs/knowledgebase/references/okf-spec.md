@@ -6,13 +6,15 @@ resource: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf
 tags: [reference, okf, spec]
 ---
 
+# Open Knowledge Format
+
 The okf knowledge base conforms to OKF v0.2.
 
-# Specification
+## Specification
 
 [Open Knowledge Format (OKF) v0.2 — SPEC.md](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 
-# Summary
+## Summary
 
 OKF is an open, human- and agent-friendly format for representing knowledge:
 a directory of markdown files with YAML frontmatter. Only `type` is

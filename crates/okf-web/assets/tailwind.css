@@ -495,9 +495,10 @@
     background: var(--surface);
   }
 
-  /* Visually-hidden checkbox that drives the nav collapse; the label is
-     the visible hamburger. sr-only keeps it keyboard-accessible. */
-  .nav-toggle-input {
+  /* Visually-hidden checkboxes that drive the two nav regimes; their labels
+     are the visible hamburgers. sr-only keeps them keyboard-accessible. */
+  .nav-toggle-input,
+  .nav-drawer-input {
     @apply sr-only;
   }
 
@@ -652,19 +653,6 @@
     outline: none;
   }
 
-  /* CSS-only collapse: when the (visually hidden) toggle checkbox is
-     checked, hide the tree and reclaim its grid column. The html.nav-hidden
-     class is the persisted form of the same state, applied by the nav
-     boot/toggle scripts so the choice survives reloads. */
-  body:has(.nav-toggle-input:checked) .tree,
-  html.nav-hidden .tree {
-    @apply hidden;
-  }
-  body:has(.nav-toggle-input:checked) .layout,
-  html.nav-hidden .layout {
-    grid-template-columns: 1fr;
-  }
-
   .layout {
     @apply grid pt-16;
     grid-template-columns: 320px 1fr;
@@ -753,6 +741,79 @@
     }
     & > ul {
       @apply pl-0;
+    }
+  }
+
+  /* Two nav regimes, split at 50rem. Wide: the tree is a grid column the
+     hamburger collapses, and the choice persists — `html.nav-hidden` is the
+     pre-paint form of the checked box, applied by the nav boot/toggle
+     scripts. Narrow: there is no room for a column, so the tree becomes an
+     overlay drawer driven by its own checkbox, closed again on every load
+     (a persisted-open drawer would bury the page it belongs to) and immune
+     to the wide regime's persisted collapse, whose rules live in the other
+     block. Each regime displays one hamburger and keeps the other's
+     checkbox out of the tab order. Both rely on the base `.tree` and
+     `.layout` rules above, so they must stay below them. */
+  @media (width > 50rem) {
+    .nav-drawer-input,
+    .site-header .menu-btn[for="nav-drawer"],
+    .nav-scrim {
+      @apply hidden;
+    }
+    body:has(.nav-toggle-input:checked) .tree,
+    html.nav-hidden .tree {
+      @apply hidden;
+    }
+    body:has(.nav-toggle-input:checked) .layout,
+    html.nav-hidden .layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (width <= 50rem) {
+    .nav-toggle-input,
+    .site-header .menu-btn[for="nav-toggle"] {
+      @apply hidden;
+    }
+    /* The tree is out of flow here, so the content takes the whole grid. */
+    .layout {
+      grid-template-columns: 1fr;
+    }
+    .tree {
+      @apply fixed top-16 bottom-0 left-0 z-40;
+      width: min(320px, 85vw);
+      background: var(--surface);
+      box-shadow: 0 10px 30px var(--shadow);
+      /* Parked off the left edge. `visibility` is what keeps the closed
+         drawer out of the tab order and the accessibility tree; it is
+         discrete, so the transition holds it visible until the slide-out
+         finishes. */
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition:
+        transform 160ms ease,
+        visibility 160ms;
+    }
+    .nav-scrim {
+      @apply fixed inset-0 z-30 block cursor-pointer;
+      background: var(--shadow);
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity 160ms ease,
+        visibility 160ms;
+    }
+    body:has(.nav-drawer-input:checked) .tree {
+      transform: none;
+      visibility: visible;
+    }
+    body:has(.nav-drawer-input:checked) .nav-scrim {
+      opacity: 1;
+      visibility: visible;
+    }
+    /* The open drawer scrolls; the page behind it stays where it was. */
+    body:has(.nav-drawer-input:checked) {
+      @apply overflow-hidden;
     }
   }
 

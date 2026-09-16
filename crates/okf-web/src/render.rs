@@ -260,14 +260,22 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
             }
             body {
                 header class="site-header" {
-                    // CSS-only collapse: a visually-hidden checkbox toggles
-                    // the nav via `body:has(:checked)` selectors in the
-                    // stylesheet — no script needed for the nav.
-                    // The `<label>` is the hamburger button.
+                    // Two CSS-only nav regimes, split at 50rem by the
+                    // stylesheet: wide screens collapse the tree's grid
+                    // column, narrow ones slide it in as an overlay drawer.
+                    // Each regime owns a visually-hidden checkbox and the
+                    // hamburger `<label>` that flips it, because their
+                    // defaults differ — the column starts open and the
+                    // choice persists, the drawer starts closed on every
+                    // load — and exactly one of the pair is ever displayed.
                     input id="nav-toggle" class="nav-toggle-input" type="checkbox" {}
+                    input id="nav-drawer" class="nav-drawer-input" type="checkbox" {}
                     label class="menu-btn" for="nav-toggle" title="Toggle navigation" {
                         // Inline SVG: hamburger glyph whose stroke inherits
                         // currentColor, so light/dark schemes both work.
+                        (PreEscaped(MENU_ICON))
+                    }
+                    label class="menu-btn" for="nav-drawer" title="Toggle navigation" {
                         (PreEscaped(MENU_ICON))
                     }
                     a class="site-name" href=(format!("{prefix}index.html")) { (chrome.title) }
@@ -298,6 +306,10 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
                         }
                     }
                 }
+                // Tap-to-dismiss backdrop for the narrow-screen drawer. A
+                // `<label>`, so closing needs no script; the stylesheet
+                // shows it only while the drawer is open, never when wide.
+                label class="nav-scrim" for="nav-drawer" aria-hidden="true" {}
                 script { (PreEscaped(NAV_TOGGLE_BOOT)) }
                 script { (PreEscaped(NAV_SUBMENU_BOOT)) }
                 script { (PreEscaped(SEARCH_ARM_BOOT)) }
