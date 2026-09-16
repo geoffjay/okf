@@ -723,10 +723,7 @@ pass
             out.contains("[Milestone 2](plans/roadmap#milestone-2)"),
             "{out}"
         );
-        assert!(
-            out.contains("[Deploy](plans/roadmap.md#deploy)"),
-            "{out}"
-        );
+        assert!(out.contains("[Deploy](plans/roadmap.md#deploy)"), "{out}");
         assert!(out.contains("[https://example.com/a](https://example.com/a)"));
     }
 

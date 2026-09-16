@@ -20,7 +20,7 @@
 //!   search       <query...> Search metadata and body text (--json, --today, --limit).
 //!   parse        <file>     Parse one concept document and print its structure (--json).
 //!   studio       [bundle]   Open the interactive terminal studio (--today, --tab, --no-watch).
-//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out, --title).
+//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out, --title, --theme).
 //! ```
 
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -748,6 +748,11 @@ pub struct SiteArgs {
     /// `.okf/config.yaml`; defaults to "okf site")
     #[arg(long, value_name = "TITLE")]
     pub title: Option<String>,
+
+    /// Theme a first-time visitor sees, by id (overrides `site.theme` in
+    /// `.okf/config.yaml`; defaults to "auto", the system preference)
+    #[arg(long, value_name = "ID")]
+    pub theme: Option<String>,
 }
 
 /// Runs the `okf` CLI on `args` (the program name already stripped) and
@@ -845,7 +850,8 @@ fn cmd_studio(args: &StudioArgs) -> Result<ExitCode, CliError> {
 /// runs so a missing or unreadable bundle fails early with the same
 /// well-coded exit as every other subcommand. Site never takes `--json`:
 /// like studio, it *is* the presentation. Per-bundle settings come from
-/// `.okf/config.yaml`, which okf-web reads itself; `--title` overrides it.
+/// `.okf/config.yaml`, which okf-web reads itself; `--title` and `--theme`
+/// override it.
 #[cfg(feature = "site")]
 fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
     let _ = load(&args.bundle)?;
@@ -855,6 +861,7 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
         out_dir: out_dir.clone(),
         today: args.today,
         title: args.title.clone(),
+        theme: args.theme.clone(),
     })
     .map_err(|e| CliError::data(format!("site failed: {e}")))?;
 
@@ -894,6 +901,9 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
     }
     if summary.config_settings.contains(&"title") && args.title.is_some() {
         println!("  note: --title overrode `site.title`");
+    }
+    if summary.config_settings.contains(&"theme") && args.theme.is_some() {
+        println!("  note: --theme overrode `site.theme`");
     }
     Ok(ExitCode::SUCCESS)
 }

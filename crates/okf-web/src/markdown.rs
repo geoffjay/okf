@@ -754,7 +754,10 @@ mod tests {
         // blocks rendered unhighlighted.
         for (body, want) in [
             ("```rust,no_run\nfn main() {}\n```", "language-rust"),
-            ("```rust,ignore,should_panic\nfn main() {}\n```", "language-rust"),
+            (
+                "```rust,ignore,should_panic\nfn main() {}\n```",
+                "language-rust",
+            ),
             ("```rust ignore\nfn main() {}\n```", "language-rust"),
             ("```js {1,3}\nlet x = 1;\n```", "language-js"),
             ("```python title=\"x.py\"\nx = 1\n```", "language-python"),
@@ -773,7 +776,9 @@ mod tests {
             );
             assert!(rendered.has_shiki, "{body}");
             assert!(
-                rendered.html.contains(&format!(r#"<code class="md-code {want}">"#)),
+                rendered
+                    .html
+                    .contains(&format!(r#"<code class="md-code {want}">"#)),
                 "{body} → {want}: {}",
                 rendered.html
             );
@@ -853,11 +858,7 @@ mod tests {
             "{}",
             rendered.html
         );
-        assert!(
-            rendered.html.contains("[[also not]]"),
-            "{}",
-            rendered.html
-        );
+        assert!(rendered.html.contains("[[also not]]"), "{}", rendered.html);
     }
 
     #[test]

@@ -6,6 +6,7 @@
 //! our own vendored-mermaid `<script>` block.
 
 use crate::PagePath;
+use crate::config::{self, Scheme};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use okf_core::{Bundle, Concept, ConceptId, Date, Status, TrustTier};
 use okf_validator::{Diagnostic, Report, Severity};
@@ -88,6 +89,58 @@ const SITE_CSS: &str = include_str!("../assets/site.css");
 // (The mermaid bootstrap lives in `mermaid_boot`, emitted per page with a
 // depth-correct asset path; no module-level constant.)
 
+/// One entry in the site's theme catalog: a palette the header menu offers.
+///
+/// The catalog is the built-in table below plus whatever the bundle defines
+/// in `.okf/config.yaml`, merged by [`crate::generate`]. An entry is the
+/// only place the two `<html>` attributes come from: `id` becomes
+/// `data-theme` and `scheme` becomes `data-scheme`, except for
+/// [`config::AUTO_THEME_ID`], which sets neither and so leaves the page on
+/// the stylesheet's `prefers-color-scheme` default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThemeEntry<'a> {
+    /// The `data-theme` value, and the string persisted under `okf-theme`.
+    pub id: &'a str,
+    /// The menu label. Escaped like every other interpolation.
+    pub label: &'a str,
+    /// The light/dark axis the palette sits on, or `None` for `auto`.
+    pub scheme: Option<Scheme>,
+}
+
+/// The palettes compiled into [`SITE_CSS`], in menu order.
+///
+/// Every id here except `auto` has a `[data-theme="<id>"]` block in
+/// `assets/tailwind.css`; `builtin_themes_have_css_blocks` holds that pair
+/// together, because a table entry whose palette was deleted would render a
+/// menu item that silently does nothing.
+pub const BUILTIN_THEMES: [ThemeEntry<'static>; 5] = [
+    ThemeEntry {
+        id: config::AUTO_THEME_ID,
+        label: "Auto (system)",
+        scheme: None,
+    },
+    ThemeEntry {
+        id: "light",
+        label: "Light",
+        scheme: Some(Scheme::Light),
+    },
+    ThemeEntry {
+        id: "dark",
+        label: "Dark",
+        scheme: Some(Scheme::Dark),
+    },
+    ThemeEntry {
+        id: "sepia",
+        label: "Sepia",
+        scheme: Some(Scheme::Light),
+    },
+    ThemeEntry {
+        id: "contrast",
+        label: "High contrast",
+        scheme: Some(Scheme::Dark),
+    },
+];
+
 /// The build-wide chrome every page shares: values that come from the site
 /// build rather than from the page's own concept.
 #[derive(Clone, Copy, Debug)]
@@ -100,6 +153,13 @@ pub struct SiteChrome<'a> {
     /// Whether this build wrote `assets/fonts.css`. Pages link it after the
     /// inline stylesheet, so its `:root` token overrides win the cascade tie.
     pub has_fonts: bool,
+    /// Whether this build wrote `assets/theme.css` — the bundle's own
+    /// palettes, linked after `fonts.css` for the same reason.
+    pub has_theme_css: bool,
+    /// The catalog the header menu offers, built-ins first.
+    pub themes: &'a [ThemeEntry<'a>],
+    /// The theme a visitor with no stored choice gets; an id from `themes`.
+    pub default_theme: &'a str,
 }
 
 /// Writes one page into the output tree.
@@ -148,17 +208,22 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
                 // Pre-render theme application: reads localStorage before
                 // first paint to avoid a flash of the wrong theme. Our own
                 // trusted inline script, like mermaid_boot.
-                script { (PreEscaped(THEME_BOOT)) }
+                script { (PreEscaped(theme_boot(chrome.themes, chrome.default_theme))) }
                 // PreEscaped: SITE_CSS is trusted compile-time content; maud's
                 // default escaping would turn `>` combinators and quoted
                 // font-family names into `&gt;`/`&quot;` and break the rules.
                 style { (PreEscaped(SITE_CSS)) }
-                // The generated font stylesheet, after the inline one so its
-                // token overrides win: an external `<link>` is fine here
-                // because the file is ours and page-depth-relative, and a
-                // failed load leaves the committed defaults in place.
+                // The generated stylesheets, after the inline one so their
+                // token overrides win: external `<link>`s are fine here
+                // because the files are ours and page-depth-relative, and a
+                // failed load leaves the committed defaults in place. Fonts
+                // first, palettes second; the two token sets are disjoint,
+                // so the order is for determinism rather than cascade.
                 @if chrome.has_fonts {
                     link rel="stylesheet" href=(format!("{prefix}assets/fonts.css"));
+                }
+                @if chrome.has_theme_css {
+                    link rel="stylesheet" href=(format!("{prefix}assets/theme.css"));
                 }
             }
             body {
@@ -182,14 +247,7 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
                             data-asset=(format!("{prefix}assets/search-index.js"))
                             data-prefix=(prefix) {}
                     }
-                    button class="theme-btn" type="button" title="Toggle theme"
-                        aria-label="Toggle dark mode" {
-                        // Sun shows in dark mode (click → light); moon shows
-                        // in light mode (click → dark). Visibility is driven
-                        // purely by the html theme class in the stylesheet.
-                        span class="icon-sun" { (PreEscaped(SUN_ICON)) }
-                        span class="icon-moon" { (PreEscaped(MOON_ICON)) }
-                    }
+                    (theme_picker(chrome.themes, chrome.default_theme))
                 }
                 div class="layout" {
                     nav id="site-nav" class="tree" aria-label="bundle contents" {
@@ -211,7 +269,7 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
                 script { (PreEscaped(NAV_TOGGLE_BOOT)) }
                 script { (PreEscaped(NAV_SUBMENU_BOOT)) }
                 script { (PreEscaped(SEARCH_ARM_BOOT)) }
-                script { (PreEscaped(THEME_TOGGLE_BOOT)) }
+                script { (PreEscaped(THEME_MENU_BOOT)) }
                 @if wants_mermaid {
                     // Classic scripts, not modules: the vendored build is a
                     // self-contained IIFE that sets a global, and classic
@@ -245,12 +303,65 @@ stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
 width=\"20\" height=\"20\" aria-hidden=\"true\">\
 <path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>";
 
-/// Applies stored site state before first paint: the theme (`.dark`/`.light`
-/// on `<html>` from `okf-theme`), the collapsed nav (`.nav-hidden` from
-/// `okf-nav`), and the closed nav submenus (`okf-nav-closed`). Keys absent
-/// or unavailable leave the classes off and every submenu expanded, so the
-/// system color scheme and the fully expanded nav are the defaults. Runs
-/// synchronously in `<head>` to avoid a flash of the wrong state.
+/// The header's theme control: the resolved-scheme glyph, and the catalog
+/// behind it as a menu.
+///
+/// `aria-checked` is the selection state — the stylesheet draws the tick
+/// from it — and the items carry the two attribute values the menu boot
+/// applies, so the page needs no second copy of the catalog in script form.
+/// A page is served with the build default checked; [`THEME_MENU_BOOT`]
+/// re-marks it from `localStorage` on load, the same value the pre-paint
+/// boot already applied to `<html>`.
+fn theme_picker(themes: &[ThemeEntry<'_>], default_theme: &str) -> Markup {
+    html! {
+        div class="theme-picker" {
+            button id="theme-btn" class="theme-btn" type="button" title="Theme"
+                aria-label="Theme" aria-haspopup="true" aria-expanded="false" {
+                // Sun shows in dark schemes, moon in light ones; visibility
+                // is driven purely by `data-scheme` in the stylesheet.
+                span class="icon-sun" { (PreEscaped(SUN_ICON)) }
+                span class="icon-moon" { (PreEscaped(MOON_ICON)) }
+            }
+            ul class="theme-menu" role="menu" aria-labelledby="theme-btn"
+                data-default=(default_theme) hidden {
+                @for theme in themes {
+                    li role="none" {
+                        button class="theme-item" type="button" role="menuitemradio"
+                            data-theme-id=(theme.id)
+                            data-theme-scheme=[theme.scheme.map(Scheme::as_css)]
+                            aria-checked=(if theme.id == default_theme { "true" } else { "false" }) {
+                            (theme.label)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `true` for an id safe to write into a JavaScript string literal and a CSS
+/// attribute selector: the charset `config` validates bundle themes against.
+fn is_safe_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Applies stored site state before first paint, so nothing flashes.
+///
+/// Three keys, read synchronously in `<head>`: the theme (`okf-theme`,
+/// applied as `data-theme`/`data-scheme` on `<html>`), the collapsed nav
+/// (`okf-nav`), and the closed nav submenus (`okf-nav-closed`). Keys absent
+/// or unavailable leave the attributes off and every submenu expanded, so
+/// the system color scheme and the fully expanded nav are the defaults.
+///
+/// The catalog is inlined as an id-to-scheme map because `<head>` runs
+/// before the menu exists. It doubles as the allowlist: a stored id this
+/// build does not define falls back to the build default rather than
+/// leaving `<html>` carrying a `data-theme` no block matches — which would
+/// drop a dark-preferring visitor onto the light base. Ids outside
+/// `[a-z0-9-]` are skipped, so the emitted literal cannot be escaped.
 ///
 /// The submenu state cannot be an attribute or class here — the nav does
 /// not exist yet — so it is applied as an injected stylesheet keyed on
@@ -259,15 +370,51 @@ width=\"20\" height=\"20\" aria-hidden=\"true\">\
 /// it once the real aria state is on the toggles. Stored paths go through
 /// `CSS.escape` (an unquoted attribute value is an identifier), so a
 /// hand-written key cannot inject rules.
-const THEME_BOOT: &str = "\
-(function () {\
+#[must_use]
+pub fn theme_boot(themes: &[ThemeEntry<'_>], default_theme: &str) -> String {
+    let mut schemes = String::from("{");
+    for theme in themes.iter().filter(|theme| is_safe_id(theme.id)) {
+        if let Some(scheme) = theme.scheme {
+            if schemes.len() > 1 {
+                schemes.push(',');
+            }
+            let _ = write!(schemes, "'{}':'{}'", theme.id, scheme.as_css());
+        }
+    }
+    schemes.push('}');
+    let default_theme = if is_safe_id(default_theme) {
+        default_theme
+    } else {
+        config::AUTO_THEME_ID
+    };
+    let mut js = String::with_capacity(THEME_BOOT_BODY.len() + schemes.len() + 64);
+    js.push_str("(function () {  var S = ");
+    js.push_str(&schemes);
+    js.push_str(", A = '");
+    js.push_str(config::AUTO_THEME_ID);
+    js.push_str("', D = '");
+    js.push_str(default_theme);
+    js.push_str("';");
+    js.push_str(THEME_BOOT_BODY);
+    js
+}
+
+/// Everything in [`theme_boot`] after the catalog literal it is emitted
+/// with.
+const THEME_BOOT_BODY: &str = "\
+  var root = document.documentElement;\
+  var choice = D;\
   try {\
     var t = localStorage.getItem('okf-theme');\
-    if (t === 'dark' || t === 'light') {\
-      document.documentElement.classList.add(t);\
-    }\
+    if (t === A || (t && Object.prototype.hasOwnProperty.call(S, t))) choice = t;\
+  } catch (e) { /* no localStorage (e.g. privacy mode): the build default */ }\
+  if (choice !== A && Object.prototype.hasOwnProperty.call(S, choice)) {\
+    root.setAttribute('data-theme', choice);\
+    root.setAttribute('data-scheme', S[choice]);\
+  }\
+  try {\
     if (localStorage.getItem('okf-nav') === 'collapsed') {\
-      document.documentElement.classList.add('nav-hidden');\
+      root.classList.add('nav-hidden');\
     }\
     var closed = JSON.parse(localStorage.getItem('okf-nav-closed') || '[]');\
     if (Array.isArray(closed) && closed.length) {\
@@ -283,39 +430,110 @@ const THEME_BOOT: &str = "\
         + turn.join(',') + '{transform:rotate(-90deg)}';\
       document.head.appendChild(st);\
     }\
-  } catch (e) { /* no localStorage (e.g. privacy mode): defaults */ }\
+  } catch (e) { /* no localStorage: the expanded nav */ }\
 })()";
 
-/// Wires the header's theme button: flips the html class, persists the
-/// choice, and keeps `aria-pressed` accurate. `okf-theme` is also keyed so
-/// multiple okf sites on the same origin share the choice.
-const THEME_TOGGLE_BOOT: &str = "\
+/// Wires the header's theme menu: opens and closes it, applies a chosen
+/// palette to `<html>`, persists the choice, and keeps `aria-checked`
+/// accurate.
+///
+/// Everything it needs is already in the DOM — each item carries its id and
+/// its scheme, the menu carries the build default — so this script is the
+/// same bytes on every page. `okf-theme` is keyed rather than namespaced per
+/// site, so several okf sites on one origin share the choice; the `storage`
+/// listener makes that visible live in an already-open tab instead of only
+/// on its next load.
+const THEME_MENU_BOOT: &str = "\
 (function () {\
-  var btn = document.querySelector('.theme-btn');\
-  if (!btn) return;\
   var root = document.documentElement;\
-  function apply(t) {\
-    root.classList.remove('dark', 'light');\
-    if (t) root.classList.add(t);\
-    btn.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');\
-    try {\
-      if (t) localStorage.setItem('okf-theme', t);\
-      else localStorage.removeItem('okf-theme');\
-    } catch (e) { /* ignore */ }\
-    /* Diagrams re-render with the matching mermaid theme when it flips. */\
+  var picker = document.querySelector('.theme-picker');\
+  if (!picker) return;\
+  var btn = picker.querySelector('.theme-btn');\
+  var menu = picker.querySelector('.theme-menu');\
+  if (!btn || !menu) return;\
+  var items = Array.prototype.slice.call(menu.querySelectorAll('.theme-item'));\
+  if (!items.length) return;\
+  var fallback = menu.getAttribute('data-default');\
+  var item = function (id) {\
+    for (var i = 0; i < items.length; i++) {\
+      if (items[i].getAttribute('data-theme-id') === id) return items[i];\
+    }\
+    return null;\
+  };\
+  var mark = function (id) {\
+    for (var i = 0; i < items.length; i++) {\
+      items[i].setAttribute('aria-checked',\
+        items[i].getAttribute('data-theme-id') === id ? 'true' : 'false');\
+    }\
+  };\
+  var apply = function (id, persist) {\
+    var chosen = item(id) || item(fallback) || items[0];\
+    var value = chosen.getAttribute('data-theme-id');\
+    var scheme = chosen.getAttribute('data-theme-scheme');\
+    if (scheme) {\
+      root.setAttribute('data-theme', value);\
+      root.setAttribute('data-scheme', scheme);\
+    } else {\
+      root.removeAttribute('data-theme');\
+      root.removeAttribute('data-scheme');\
+    }\
+    mark(value);\
+    if (persist) {\
+      try { localStorage.setItem('okf-theme', value); } catch (e) { /* ignore */ }\
+    }\
+    /* Diagrams re-render with the matching mermaid theme when it changes. */\
     root.dispatchEvent(new CustomEvent('okf-theme-change'));\
-  }\
-  btn.addEventListener('click', function () {\
-    var dark = root.classList.contains('dark')\
-      || (!root.classList.contains('light')\
-          && window.matchMedia('(prefers-color-scheme: dark)').matches);\
-    apply(dark ? 'light' : 'dark');\
+  };\
+  var open = function (yes) {\
+    menu.hidden = !yes;\
+    btn.setAttribute('aria-expanded', yes ? 'true' : 'false');\
+    if (yes) {\
+      var current = menu.querySelector('.theme-item[aria-checked=\"true\"]');\
+      (current || items[0]).focus();\
+    }\
+  };\
+  btn.addEventListener('click', function (e) {\
+    e.stopPropagation();\
+    open(menu.hidden);\
   });\
-  /* Reflect the initial state on the button. */\
-  var dark = root.classList.contains('dark')\
-    || (!root.classList.contains('light')\
-        && window.matchMedia('(prefers-color-scheme: dark)').matches);\
-  btn.setAttribute('aria-pressed', dark ? 'true' : 'false');\
+  items.forEach(function (entry, ix) {\
+    entry.addEventListener('click', function () {\
+      apply(entry.getAttribute('data-theme-id'), true);\
+      open(false);\
+      btn.focus();\
+    });\
+    entry.addEventListener('keydown', function (e) {\
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {\
+        e.preventDefault();\
+        var step = e.key === 'ArrowDown' ? 1 : items.length - 1;\
+        items[(ix + step) % items.length].focus();\
+      } else if (e.key === 'Home') {\
+        e.preventDefault();\
+        items[0].focus();\
+      } else if (e.key === 'End') {\
+        e.preventDefault();\
+        items[items.length - 1].focus();\
+      }\
+    });\
+  });\
+  document.addEventListener('keydown', function (e) {\
+    if (e.key === 'Escape' && !menu.hidden) {\
+      open(false);\
+      btn.focus();\
+    }\
+  });\
+  document.addEventListener('click', function (e) {\
+    if (!menu.hidden && !picker.contains(e.target)) open(false);\
+  });\
+  menu.addEventListener('focusout', function (e) {\
+    if (!menu.hidden && !picker.contains(e.relatedTarget)) open(false);\
+  });\
+  window.addEventListener('storage', function (e) {\
+    if (e.key === 'okf-theme') apply(e.newValue || fallback, false);\
+  });\
+  var stored = null;\
+  try { stored = localStorage.getItem('okf-theme'); } catch (e) { /* ignore */ }\
+  mark(item(stored) ? stored : fallback);\
 })()";
 
 /// Wires the hamburger's checkbox to the persisted nav state: on load it
@@ -423,40 +641,94 @@ stroke-linejoin=\"round\" width=\"14\" height=\"14\" aria-hidden=\"true\">\
 /// `<body>` so `.mermaid` nodes already exist. Strict security level (the
 /// default) sanitizes the diagram source; `startOnLoad: false` plus an
 /// explicit `run` keeps the render observable and marks processed nodes.
-/// The diagram theme follows the site theme (default in light, `dark` in
-/// dark mode) and re-renders when the theme toggle flips, so labels and
-/// edges stay legible on the dark card.
+/// The scheme comes from `<html data-scheme>` (falling back to the system
+/// preference when no theme is chosen) and diagrams re-render on
+/// `okf-theme-change`, so labels and edges stay legible on every card.
 ///
-/// Diagram labels follow the prose: `fontFamily` is read from the computed
-/// `--font-body` token, so a bundle that overrides the token in its
-/// generated `fonts.css` gets diagrams in the same face with no Rust-side
-/// parameterization. An empty read (no token, impossible with the committed
-/// stylesheet) leaves mermaid's own default alone.
+/// Diagrams follow the palette, not just the axis: `fontFamily` and the
+/// mapped `themeVariables` are read from the computed tokens, so any
+/// palette — built-in or one a bundle defined in its `.okf/config.yaml` —
+/// reaches diagrams with no Rust-side knowledge of it. `base` is the only
+/// mermaid theme that honors `themeVariables` wholesale, so a successful
+/// token read selects it and `darkMode` tells it which way to derive the
+/// shades it computes itself; an empty read falls back to mermaid's own
+/// `default`/`dark`.
+///
+/// Token values are converted to hex first, by painting one pixel and
+/// reading it back. Mermaid derives its shades with khroma, which parses
+/// hex, `rgb()`, and `hsl()` but not `oklch()` — the syntax this site's
+/// palette is authored in — and a color it cannot parse rejects the whole
+/// `run`, leaving every diagram unrendered. The canvas is the browser's own
+/// parser, so it converts any CSS color the stylesheet can hold, including
+/// a bundle's, without shipping a color-space implementation.
 const fn mermaid_boot() -> &'static str {
     "\
 if (window.mermaid) {\
   var isDark = function () {\
-    return document.documentElement.classList.contains('dark')\
-      || (!document.documentElement.classList.contains('light')\
-          && window.matchMedia('(prefers-color-scheme: dark)').matches);\
+    var scheme = document.documentElement.getAttribute('data-scheme');\
+    if (scheme) return scheme === 'dark';\
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;\
   };\
   var nodes = document.querySelectorAll('pre.mermaid');\
   /* Cache each diagram's source before the first render replaces it with\
-     SVG, so a theme toggle can rebuild them with the matching theme. */\
+     SVG, so a theme change can rebuild them with the matching palette. */\
   nodes.forEach(function (el) { el.dataset.diagram = el.textContent; });\
   var renderDiagrams = function (dark) {\
     nodes.forEach(function (el) {\
       el.textContent = el.dataset.diagram;\
       el.removeAttribute('data-processed');\
     });\
+    var style = getComputedStyle(document.documentElement);\
+    var canvas = document.createElement('canvas');\
+    canvas.width = canvas.height = 1;\
+    var pixel = canvas.getContext('2d', { willReadFrequently: true });\
+    var token = function (name) { return style.getPropertyValue(name).trim(); };\
+    var hex = function (name) {\
+      var value = token(name);\
+      if (!value || !pixel) return '';\
+      pixel.clearRect(0, 0, 1, 1);\
+      pixel.fillStyle = value;\
+      pixel.fillRect(0, 0, 1, 1);\
+      var rgb = pixel.getImageData(0, 0, 1, 1).data;\
+      return '#' + [rgb[0], rgb[1], rgb[2]].map(function (c) {\
+        return ('0' + c.toString(16)).slice(-2);\
+      }).join('');\
+    };\
     var cfg = {\
       securityLevel: 'strict',\
       startOnLoad: false,\
       theme: dark ? 'dark' : 'default'\
     };\
-    var font = getComputedStyle(document.documentElement)\
-      .getPropertyValue('--font-body').trim();\
+    var font = token('--font-body');\
     if (font) cfg.fontFamily = font;\
+    var bg = hex('--mermaid-bg');\
+    var ink = hex('--ink');\
+    var edge = hex('--edge');\
+    if (bg && ink && edge) {\
+      /* The canvas is the card the diagram sits on, so nodes take the page\
+         surface instead: same two tokens the rest of the page layers, and\
+         a node that matched its card would read as flat. */\
+      var node = hex('--surface') || bg;\
+      cfg.theme = 'base';\
+      cfg.themeVariables = {\
+        darkMode: dark,\
+        background: bg,\
+        primaryColor: node,\
+        mainBkg: node,\
+        secondaryColor: hex('--code-bg') || node,\
+        tertiaryColor: hex('--panel-bg') || node,\
+        primaryTextColor: ink,\
+        secondaryTextColor: ink,\
+        tertiaryTextColor: ink,\
+        textColor: ink,\
+        nodeTextColor: ink,\
+        lineColor: edge,\
+        primaryBorderColor: edge,\
+        secondaryBorderColor: edge,\
+        tertiaryBorderColor: edge,\
+        nodeBorder: edge\
+      };\
+    }\
     mermaid.initialize(cfg);\
     mermaid.run({ querySelector: 'pre.mermaid', suppressErrors: true })\
       .then(function () {\
@@ -1185,5 +1457,92 @@ pub fn directory_page(bundle: &Bundle, dir: &ConceptId) -> SitePage {
         has_mermaid: false,
         has_shiki: false,
         meta_rows: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every built-in palette must have a block in the compiled stylesheet.
+    ///
+    /// The catalog is knowledge held twice — once as a Rust table, once as
+    /// CSS — and the failure mode of drift is silent: a menu entry that
+    /// applies a `data-theme` no rule matches, leaving the visitor on the
+    /// scheme base. Three shapes are legitimate: `auto` sets no attributes
+    /// at all, a scheme alias (`light`, `dark`) *is* the scheme base and so
+    /// needs no palette block, and every other entry must have one. The
+    /// Tailwind minifier drops the quotes from attribute values, so both
+    /// spellings count.
+    #[test]
+    fn builtin_themes_have_css_blocks() {
+        for theme in BUILTIN_THEMES {
+            assert!(is_safe_id(theme.id), "unsafe built-in id `{}`", theme.id);
+            if theme.id == config::AUTO_THEME_ID {
+                assert!(theme.scheme.is_none(), "`auto` must carry no scheme");
+                continue;
+            }
+            let scheme = theme
+                .scheme
+                .unwrap_or_else(|| panic!("`{}` must name a scheme", theme.id));
+            if theme.id == scheme.as_css() {
+                continue;
+            }
+            let quoted = format!("[data-theme=\"{}\"]", theme.id);
+            let bare = format!("[data-theme={}]", theme.id);
+            assert!(
+                SITE_CSS.contains(&quoted) || SITE_CSS.contains(&bare),
+                "no `{}` block in site.css; run `cargo xtask tailwind`",
+                theme.id
+            );
+        }
+    }
+
+    /// The scheme ladders the palettes rely on must survive a recompile.
+    #[test]
+    fn site_css_keys_schemes_on_the_data_attribute() {
+        for selector in [
+            "[data-scheme=dark]",
+            "[data-scheme=light]",
+            ":not([data-scheme])",
+        ] {
+            assert!(SITE_CSS.contains(selector), "site.css lost `{selector}`");
+        }
+        assert!(
+            !SITE_CSS.contains(":root.dark"),
+            "site.css still carries the pre-attribute theme classes"
+        );
+    }
+
+    /// The boot inlines the catalog as its allowlist, and only ids that can
+    /// be written into a JavaScript string literal reach it.
+    #[test]
+    fn theme_boot_inlines_the_catalog() {
+        let themes = [
+            ThemeEntry {
+                id: config::AUTO_THEME_ID,
+                label: "Auto",
+                scheme: None,
+            },
+            ThemeEntry {
+                id: "dark",
+                label: "Dark",
+                scheme: Some(Scheme::Dark),
+            },
+            ThemeEntry {
+                id: "no'quotes",
+                label: "Hostile",
+                scheme: Some(Scheme::Light),
+            },
+        ];
+        let js = theme_boot(&themes, "dark");
+        assert!(js.contains("var S = {'dark':'dark'}"), "{js}");
+        assert!(js.contains("A = 'auto', D = 'dark'"), "{js}");
+        assert!(!js.contains("no'quotes"), "unsafe id reached the literal");
+
+        // An id the build does not define cannot become the default: the
+        // fallback is `auto`, which sets no attributes at all.
+        let js = theme_boot(&themes, "not an id");
+        assert!(js.contains("D = 'auto'"), "{js}");
     }
 }

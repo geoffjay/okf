@@ -12,6 +12,7 @@
 //!     out_dir: "./site".into(),
 //!     today: None,
 //!     title: None,
+//!     theme: None,
 //! })?;
 //! # Ok::<(), okf_web::SiteError>(())
 //! ```
@@ -30,21 +31,34 @@
 //!   page carries a diagram, so clean bundles never download it.
 //! - `assets/shiki.min.js`, a vendored shiki highlighter bundle, written only
 //!   when some page carries a fenced code block with a language tag; pages
-//!   highlight client-side in GitHub light/dark themes driven by the site's
-//!   theme classes.
+//!   highlight client-side in GitHub light/dark themes, resolved by the
+//!   site's `data-scheme` attribute.
 //! - `assets/fonts.css` plus `assets/fonts/`, written only when the bundle
 //!   configures fonts, and linked after the inline stylesheet so its token
 //!   overrides win.
+//! - `assets/theme.css`, written only when the bundle defines its own
+//!   palettes, and linked after `fonts.css` for the same reason.
+//!
+//! ## Themes
+//!
+//! A visitor picks a palette from the header menu; the choice lives in
+//! `localStorage` under `okf-theme` and is applied to `<html>` before first
+//! paint as two attributes — `data-scheme` (`light`/`dark`, absent = follow
+//! the system) for the base palette and everything else on the light/dark
+//! axis, and `data-theme` for the palette's token overrides. The catalog is
+//! [`render::BUILTIN_THEMES`] plus the bundle's own `site.themes`, and
+//! [`SiteOptions::theme`] or `site.theme` pins what a first visit sees.
 //!
 //! ## Per-bundle configuration
 //!
 //! A bundle may pin its site settings in `.okf/config.yaml`, read by
-//! [`config::SiteConfig`] — a header title and the typography tokens, with
-//! self-hosted font files under `.okf/fonts/`. The directory is invisible to
-//! every OKF walker, so configuration never becomes content. Caller-supplied
-//! options win over the file: [`SiteOptions::title`] overrides `site.title`,
-//! which overrides [`DEFAULT_SITE_TITLE`]. A bundle with no `.okf/` generates
-//! byte-identical output to a pre-configuration build.
+//! [`config::SiteConfig`] — a header title, the typography tokens, with
+//! self-hosted font files under `.okf/fonts/`, and its own themes. The
+//! directory is invisible to every OKF walker, so configuration never
+//! becomes content. Caller-supplied options win over the file:
+//! [`SiteOptions::title`] overrides `site.title` and [`SiteOptions::theme`]
+//! overrides `site.theme`. A bundle with no `.okf/` generates the same
+//! output a bundle that configures nothing does.
 //!
 //! ## Security posture
 //!
@@ -71,9 +85,9 @@ pub mod markdown;
 pub mod render;
 pub mod search;
 
-use config::{Fonts, SiteConfig};
+use config::{Fonts, SiteConfig, Themes};
 use okf_core::{Bundle, BundleError, ConceptId, Date};
-use render::{SiteChrome, SitePage, write_page};
+use render::{BUILTIN_THEMES, SiteChrome, SitePage, ThemeEntry, write_page};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -99,6 +113,11 @@ pub struct SiteOptions {
     /// `site.title` (see [`config::SiteConfig`]), then to
     /// [`DEFAULT_SITE_TITLE`].
     pub title: Option<String>,
+    /// The theme a first-time visitor sees, by id. `None` falls back to the
+    /// bundle's `site.theme`, then to [`config::AUTO_THEME_ID`] — following
+    /// the system light/dark preference. An id the site's catalog does not
+    /// define is an error, not a silent fallback.
+    pub theme: Option<String>,
 }
 
 /// The site title used when [`SiteOptions::title`] is `None`.
@@ -153,13 +172,15 @@ pub struct SiteSummary {
 ///
 /// Returns an error if the bundle root cannot be loaded (see
 /// [`Bundle::load`]), if `.okf/config.yaml` exists and cannot be used (see
-/// [`config::SiteConfig::load`]), or if any output file cannot be written.
+/// [`config::SiteConfig::load`]), if the requested default theme is not one
+/// the site defines, or if any output file cannot be written.
 pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     let today = options.effective_today();
     let SiteOptions {
         root,
         out_dir,
         title,
+        theme,
         ..
     } = options;
     let config = SiteConfig::load(&root)?;
@@ -171,6 +192,13 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         .or(config.title)
         .unwrap_or_else(|| DEFAULT_SITE_TITLE.to_string());
     let fonts = config.fonts;
+    let themes = config.themes;
+    let catalog = theme_catalog(&themes);
+    // Same precedence for the theme, with one difference: an id nothing
+    // defines is an error rather than a fallback, because a default theme
+    // that silently does nothing is exactly the CI-hostile case the config
+    // is strict about.
+    let default_theme = resolve_default_theme(&root, theme, config.theme, &catalog)?;
     let bundle = Bundle::load(&root)?;
 
     // Health badges from the same calls the studio snapshot makes.
@@ -218,6 +246,9 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         title: &site_title,
         has_mermaid: bundle_has_mermaid,
         has_fonts: !fonts.is_empty(),
+        has_theme_css: !themes.is_empty(),
+        themes: &catalog,
+        default_theme: &default_theme,
     };
 
     fs::create_dir_all(&out_dir).map_err(|e| SiteError::Io(e, out_dir.clone()))?;
@@ -250,6 +281,14 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
                 .map_err(|e| SiteError::Io(e, fonts_css.clone()))?;
             copy_font_files(&root, &assets_dir, &fonts)?;
         }
+        // Themes are opt-in the same way: the built-in palettes are already
+        // in the inline stylesheet, so a bundle that defines none writes no
+        // second file and links nothing.
+        if !themes.is_empty() {
+            let theme_css = assets_dir.join("theme.css");
+            fs::write(&theme_css, themes.to_css())
+                .map_err(|e| SiteError::Io(e, theme_css.clone()))?;
+        }
     }
 
     Ok(SiteSummary {
@@ -259,6 +298,72 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         config: config_path,
         config_settings,
         notes: config.notes,
+    })
+}
+
+/// The site's theme catalog: the built-in palettes, then the bundle's own.
+///
+/// A bundle theme whose id matches a built-in is *not* a second menu entry:
+/// its `[data-theme]` block lands in `assets/theme.css`, which is linked
+/// after the inline stylesheet, so it overrides that palette's tokens and
+/// the entry keeps its built-in label and scheme. That is the cascade doing
+/// the work, and it is the natural way to say "keep the standard themes,
+/// restyle them".
+fn theme_catalog(themes: &Themes) -> Vec<ThemeEntry<'_>> {
+    let mut catalog: Vec<ThemeEntry<'_>> = BUILTIN_THEMES.to_vec();
+    for theme in themes {
+        if catalog.iter().any(|entry| entry.id == theme.id()) {
+            continue;
+        }
+        catalog.push(ThemeEntry {
+            id: theme.id(),
+            label: theme.label(),
+            scheme: Some(theme.scheme()),
+        });
+    }
+    catalog
+}
+
+/// Resolves the theme a first visit gets: the caller's `--theme` over the
+/// bundle's `site.theme` over [`config::AUTO_THEME_ID`].
+///
+/// An id outside the catalog fails the build, and the two sources report
+/// differently on purpose: a bad `site.theme` is a configuration error
+/// carrying the file's path, a bad `--theme` is the caller's mistake.
+fn resolve_default_theme(
+    root: &Path,
+    requested: Option<String>,
+    configured: Option<String>,
+    catalog: &[ThemeEntry<'_>],
+) -> Result<String, SiteError> {
+    let known = || {
+        catalog
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let (id, from_caller) = match (requested, configured) {
+        (Some(id), _) => (id, true),
+        (None, Some(id)) => (id, false),
+        (None, None) => return Ok(config::AUTO_THEME_ID.to_string()),
+    };
+    if catalog.iter().any(|entry| entry.id == id) {
+        return Ok(id);
+    }
+    Err(if from_caller {
+        SiteError::Theme(format!(
+            "`{id}` is not one of this site's themes: {}",
+            known()
+        ))
+    } else {
+        SiteError::Config(config::ConfigError::invalid(
+            root,
+            format!(
+                "`site.theme` names `{id}`, which is not one of this site's themes: {}",
+                known()
+            ),
+        ))
     })
 }
 
@@ -348,6 +453,8 @@ pub enum SiteError {
     Bundle(BundleError),
     /// The bundle's `.okf/config.yaml` could not be used.
     Config(config::ConfigError),
+    /// The caller asked for a default theme the site does not define.
+    Theme(String),
     /// An output file could not be written.
     Io(io::Error, PathBuf),
 }
@@ -357,6 +464,7 @@ impl std::fmt::Display for SiteError {
         match self {
             Self::Bundle(e) => write!(f, "bundle: {e}"),
             Self::Config(e) => write!(f, "config: {e}"),
+            Self::Theme(message) => write!(f, "theme: {message}"),
             Self::Io(e, path) => write!(f, "{}: {e}", path.display()),
         }
     }

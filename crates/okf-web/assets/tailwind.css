@@ -19,10 +19,30 @@
  * mode, mist-900 in dark. Accent colors (links, trust tiers, statuses,
  * severities) use the standard Tailwind scales and flip to lighter steps in
  * dark mode for contrast.
+ *
+ * A theme is a set of token *values*, never a set of rules, which is what
+ * lets a visitor switch one at runtime against this precompiled stylesheet.
+ * The choice is two attributes on `<html>`, applied by the theme bootstrap
+ * before first paint:
+ *
+ * - `data-scheme` (`light`/`dark`, absent = follow the system) selects the
+ *   base palette and everything else that is really a light/dark question:
+ *   `color-scheme`, which shiki variable resolves, and which glyph the theme
+ *   button shows.
+ * - `data-theme` (a palette id, absent = the scheme's base) layers token
+ *   overrides on top. The built-in palettes are the `[data-theme]` blocks
+ *   below; a bundle's own palettes arrive in a generated `assets/theme.css`
+ *   linked after this stylesheet, which wins the equal-specificity tie on
+ *   source order. Because the scheme block seeds everything a palette omits,
+ *   a theme names only the tokens it actually changes.
+ *
+ * With neither attribute — no JavaScript, no stored choice — this is exactly
+ * a light stylesheet with a `prefers-color-scheme` override, which is what
+ * the site was before themes existed.
  */
 :root {
-  /* Light values are the defaults; dark flips via the media query below
-     (system preference) or the .dark class (explicit user choice). */
+  /* Light values are the defaults; dark arrives through the media query
+     below (system preference) or `[data-scheme="dark"]` (explicit choice). */
   color-scheme: light;
 
   /*
@@ -33,6 +53,7 @@
    * defaults restate today's computed values — system sans on `body`, and
    * for code the same stack Tailwind's preflight applies through
    * `--default-mono-font-family` — so the tokens change nothing on their own.
+   * Themes never touch them: the two token sets are disjoint by validation.
    */
   --font-body: system-ui, sans-serif;
   --font-code:
@@ -43,6 +64,7 @@
   --ink: oklch(14.8% 0.004 228.8); /* mist-950 */
   --edge: oklch(87.2% 0.007 219.6); /* mist-300 */
   --link: var(--color-violet-400);
+  --shadow: oklch(0% 0 0 / 0.15);
 
   --panel-bg: oklch(98.7% 0.002 197.1); /* mist-50 */
   --code-bg: oklch(92.5% 0.005 214.3); /* mist-200 */
@@ -62,16 +84,17 @@
   --danger: oklch(50.5% 0.213 27.518); /* red-700 */
 }
 
-/* System preference via the media query; explicit choice via the html
-   classes below (set by the theme bootstrap script from localStorage).
-   `color-scheme` also follows so form controls and scrollbars match. */
+/* The dark base, twice: once for the system preference when the visitor has
+   expressed no choice, once for the choice itself. The duplication is the
+   price of a media query that cannot be folded into a selector list. */
 @media (prefers-color-scheme: dark) {
-  :root:not(.light):not(.dark) {
+  :root:not([data-scheme]) {
     color-scheme: dark;
     --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
     --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
     --edge: oklch(37.8% 0.015 216); /* mist-700 */
     --link: var(--color-violet-300);
+    --shadow: oklch(0% 0 0 / 0.5);
     --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
     --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
     --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
@@ -88,12 +111,13 @@
     --danger: oklch(63.7% 0.237 25.331); /* red-500 */
   }
 }
-:root.dark {
+:root[data-scheme="dark"] {
   color-scheme: dark;
   --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
   --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
   --edge: oklch(37.8% 0.015 216); /* mist-700 */
   --link: var(--color-violet-300);
+  --shadow: oklch(0% 0 0 / 0.5);
   --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
   --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
   --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
@@ -109,8 +133,63 @@
   --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
   --danger: oklch(63.7% 0.237 25.331); /* red-500 */
 }
-:root.light {
+:root[data-scheme="light"] {
   color-scheme: light;
+}
+
+/*
+ * Built-in palettes. Each overrides only the tokens it changes; its scheme
+ * block supplies the rest, which is also what makes the shiki, mermaid, and
+ * theme-glyph rules below correct for a palette they have never heard of.
+ * `BUILTIN_THEMES` in `render.rs` names the same ids and schemes, and a unit
+ * test there asserts every id still has a block here.
+ */
+
+/* sepia — a warm paper light theme for long reading. The amber and green
+   accents drop a step: on a warm ground the light base's 700s measure 4.30
+   and 4.21 against the surface, just under AA for the badge text they
+   color, and the 800s restore it at 6.07 and 6.04. */
+:root[data-theme="sepia"] {
+  --surface: oklch(94.5% 0.018 88);
+  --ink: oklch(25% 0.025 60);
+  --edge: oklch(85% 0.028 82);
+  --link: oklch(46% 0.13 42);
+  --shadow: oklch(35% 0.05 70 / 0.18);
+  --panel-bg: oklch(97% 0.014 88);
+  --code-bg: oklch(90.5% 0.024 86);
+  --mermaid-bg: oklch(97% 0.014 88);
+  --tier-unverified: oklch(47.3% 0.137 46.201); /* amber-800 */
+  --tier-human: oklch(44.8% 0.119 151.328); /* green-800 */
+  --status-draft: oklch(47.3% 0.137 46.201); /* amber-800 */
+  --status-stable: oklch(44.8% 0.119 151.328); /* green-800 */
+  --status-other: oklch(42% 0.02 70);
+  --sev-info: oklch(42% 0.02 70);
+  --sev-warning: oklch(47.3% 0.137 46.201); /* amber-800 */
+}
+
+/* contrast — a maximum-separation dark theme: pure black ground, pure white
+   ink, and badge accents lifted to the 300 steps so every one of them clears
+   WCAG AAA on the ground. */
+:root[data-theme="contrast"] {
+  --surface: oklch(0% 0 0);
+  --ink: oklch(100% 0 0);
+  --edge: oklch(65% 0 0);
+  --link: oklch(85% 0.12 293.5);
+  --shadow: oklch(0% 0 0 / 0.8);
+  --panel-bg: oklch(15% 0 0);
+  --code-bg: oklch(18% 0 0);
+  --mermaid-bg: oklch(15% 0 0);
+  --tier-unverified: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --tier-machine: oklch(81.1% 0.111 293.571); /* violet-300 */
+  --tier-human: oklch(87.1% 0.15 154.449); /* green-300 */
+  --status-draft: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --status-stable: oklch(87.1% 0.15 154.449); /* green-300 */
+  --status-deprecated: oklch(80.8% 0.114 19.571); /* red-300 */
+  --status-other: oklch(92% 0 0);
+  --sev-info: oklch(92% 0 0);
+  --sev-warning: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --sev-error: oklch(80.8% 0.114 19.571); /* red-300 */
+  --danger: oklch(80.8% 0.114 19.571); /* red-300 */
 }
 
 @layer base {
@@ -156,24 +235,24 @@
   /*
    * Shiki highlight: the vendored bundle emits token colors as
    * --shiki-light/--shiki-dark CSS variables (defaultColor: false), so
-   * resolving them here is the whole theme story — a theme flip costs
-   * nothing. The selector ladder mirrors the theme system above: the
-   * .light class and system-light default resolve the light variables;
-   * .dark and system-dark resolve the dark ones. .shiki lives on the <pre>
-   * the boot script swapped in; inline <code> never carries it.
+   * resolving them here is the whole code-color story — a theme change
+   * costs no re-render. Code colors ride the light/dark axis only, so the
+   * ladder keys on `data-scheme` and every palette, built-in or bundle,
+   * is covered without a rule of its own. .shiki lives on the <pre> the
+   * boot script swapped in; inline <code> never carries it.
    */
   .shiki,
   .shiki span {
     color: var(--shiki-light);
   }
   @media (prefers-color-scheme: dark) {
-    :root:not(.light):not(.dark) .shiki,
-    :root:not(.light):not(.dark) .shiki span {
+    :root:not([data-scheme]) .shiki,
+    :root:not([data-scheme]) .shiki span {
       color: var(--shiki-dark);
     }
   }
-  :root.dark .shiki,
-  :root.dark .shiki span {
+  :root[data-scheme="dark"] .shiki,
+  :root[data-scheme="dark"] .shiki span {
     color: var(--shiki-dark);
   }
 
@@ -358,7 +437,7 @@
     @apply absolute right-0 z-50 mt-1 max-h-96 w-[24rem] max-w-[90vw] overflow-y-auto rounded-md py-1;
     border: 1px solid var(--edge);
     background: var(--panel-bg);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.15);
+    box-shadow: 0 10px 30px var(--shadow);
   }
   .site-search-results .search-row {
     @apply block truncate px-3 py-1 text-sm;
@@ -376,9 +455,15 @@
     opacity: 0.85;
   }
 
-  /* Theme toggle: styled like the menu button. Show the sun in dark mode
-     (click for light) and the moon in light mode (click for dark); the
-     theme bootstrap/toggle scripts drive the html class. */
+  /* Theme picker. The button is styled like the hamburger and shows the
+     glyph for the *resolved* scheme — sun in dark (click for light), moon in
+     light — keyed on `data-scheme`, so a palette the stylesheet has never
+     heard of still gets the right glyph. The panel under it lists the
+     catalog; `aria-checked` is the selection state and the tick is drawn
+     from it, so the accessible state cannot drift from the rendered one. */
+  .site-header .theme-picker {
+    @apply relative shrink-0;
+  }
   .site-header .theme-btn {
     @apply flex shrink-0 cursor-pointer items-center justify-center;
     width: 2rem;
@@ -392,22 +477,58 @@
   .site-header .theme-btn .icon-sun {
     @apply hidden;
   }
-  :root:not(.light):not(.dark) .site-header .theme-btn .icon-moon {
+  :root:not([data-scheme]) .site-header .theme-btn .icon-moon {
     @apply hidden;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not(.light):not(.dark) .site-header .theme-btn .icon-sun {
+    :root:not([data-scheme]) .site-header .theme-btn .icon-sun {
       @apply block;
     }
-    :root:not(.light):not(.dark) .site-header .theme-btn .icon-moon {
+    :root:not([data-scheme]) .site-header .theme-btn .icon-moon {
       @apply hidden;
     }
   }
-  :root.dark .site-header .theme-btn .icon-sun {
+  :root[data-scheme="dark"] .site-header .theme-btn .icon-sun {
     @apply block;
   }
-  :root.dark .site-header .theme-btn .icon-moon {
+  :root[data-scheme="dark"] .site-header .theme-btn .icon-moon {
     @apply hidden;
+  }
+
+  .theme-menu {
+    @apply absolute right-0 z-50 mt-1 list-none rounded-md p-1;
+    min-width: 11rem;
+    margin-bottom: 0;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 30px var(--shadow);
+  }
+  .theme-menu[hidden] {
+    @apply hidden;
+  }
+  .theme-menu .theme-item {
+    @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-sm;
+    border: 0;
+    background: none;
+    color: var(--ink);
+  }
+  /* The tick occupies its cell whether or not it is shown, so labels do not
+     shift when the selection moves. */
+  .theme-menu .theme-item::before {
+    @apply w-3 text-center;
+    content: "✓";
+    opacity: 0;
+  }
+  .theme-menu .theme-item[aria-checked="true"] {
+    color: var(--link);
+  }
+  .theme-menu .theme-item[aria-checked="true"]::before {
+    opacity: 1;
+  }
+  .theme-menu .theme-item:hover,
+  .theme-menu .theme-item:focus-visible {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+    outline: none;
   }
 
   /* CSS-only collapse: when the (visually hidden) toggle checkbox is

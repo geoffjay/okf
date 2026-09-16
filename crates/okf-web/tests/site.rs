@@ -3,7 +3,7 @@
 //! panels, dashboard numbers, and the no-raw-HTML security posture.
 
 use okf_core::Date;
-use okf_web::{SiteOptions, generate};
+use okf_web::{SiteError, SiteOptions, generate};
 use std::path::{Path, PathBuf};
 
 /// A scratch bundle on disk, cleaned up on drop.
@@ -89,6 +89,7 @@ fn run(b: &TestBundle, today: Option<Date>) -> okf_web::SiteSummary {
         out_dir: b.site(),
         today,
         title: None,
+        theme: None,
     })
     .unwrap()
 }
@@ -301,13 +302,13 @@ fn script_tag_in_frontmatter_is_escaped() {
     assert!(page.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
     assert!(!page.contains("<img src=x"));
     // Producer scripts never survive: every <script> on the page is one of
-    // the generator's own trusted inline bootstrap snippets (theme
-    // boot/toggle), never bundle content.
+    // the generator's own trusted inline bootstrap snippets (theme boot and
+    // menu, nav, search), never bundle content.
     for script in page.match_indices("<script").map(|(i, _)| &page[i..]) {
         assert!(
             script.contains("localStorage.getItem('okf-theme')")
                 || script.contains("localStorage.getItem('okf-nav')")
-                || script.contains("document.querySelector('.theme-btn')")
+                || script.contains("document.querySelector('.theme-picker')")
                 || script.contains("document.getElementById('nav-toggle')")
                 || script.contains("nav.querySelectorAll('.dir-toggle')")
                 || script.contains("mermaid"),
@@ -522,6 +523,7 @@ fn out_dir_is_created_when_missing() {
         out_dir: out.clone(),
         today: None,
         title: None,
+        theme: None,
     })
     .unwrap();
     assert!(out.join("index.html").is_file());
@@ -611,6 +613,7 @@ fn site_title_lives_in_the_header_and_is_configurable() {
         out_dir: b.site(),
         today: None,
         title: Some("Foo Site".to_string()),
+        theme: None,
     })
     .unwrap();
     let dash = b.page("index.html");
@@ -848,8 +851,22 @@ fn run_titled(b: &TestBundle, title: Option<&str>) -> okf_web::SiteSummary {
         out_dir: b.site(),
         today: None,
         title: title.map(str::to_string),
+        theme: None,
     })
     .unwrap()
+}
+
+/// Generates with an explicit `--theme`-equivalent override, returning the
+/// error rather than unwrapping it: the unknown-theme path is a build
+/// failure worth asserting on.
+fn run_themed(b: &TestBundle, theme: Option<&str>) -> Result<okf_web::SiteSummary, SiteError> {
+    generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: None,
+        theme: theme.map(str::to_string),
+    })
 }
 
 /// The header title's precedence chain: `SiteOptions::title` (the CLI's
@@ -919,12 +936,16 @@ fn config_problems_fail_the_build_or_are_noted() {
         out_dir: b.site(),
         today: None,
         title: None,
+        theme: None,
     })
     .unwrap_err();
     assert!(matches!(err, okf_web::SiteError::Config(_)), "{err:?}");
     let message = err.to_string();
     assert!(message.contains("unknown key `titel`"), "{message}");
-    assert!(message.contains("known keys: title, fonts"), "{message}");
+    assert!(
+        message.contains("known keys: title, fonts, theme, themes"),
+        "{message}"
+    );
     assert!(message.contains(".okf/config.yaml"), "{message}");
 
     b.write(".okf/config.yaml", "site:\n  title: [oops\n");
@@ -933,6 +954,7 @@ fn config_problems_fail_the_build_or_are_noted() {
         out_dir: b.site(),
         today: None,
         title: None,
+        theme: None,
     })
     .unwrap_err()
     .to_string();
@@ -1011,13 +1033,20 @@ fn font_families_emit_a_linked_token_override() {
         "graph page climbs one level"
     );
 
-    // Diagrams follow the body token rather than a hard-coded family.
+    // Diagrams follow the tokens rather than any hard-coded value: the body
+    // family, and the palette itself through mermaid's theme variables.
     let graph = b.page("__okf/graph.html");
     assert!(
         graph.contains("getComputedStyle(document.documentElement)")
-            && graph.contains("getPropertyValue('--font-body')")
+            && graph.contains("token('--font-body')")
             && graph.contains("cfg.fontFamily = font"),
-        "mermaid reads the token: {graph}"
+        "mermaid reads the font token: {graph}"
+    );
+    assert!(
+        graph.contains("hex('--mermaid-bg')")
+            && graph.contains("cfg.theme = 'base'")
+            && graph.contains("cfg.themeVariables"),
+        "mermaid reads the palette tokens: {graph}"
     );
 }
 
@@ -1071,10 +1100,160 @@ fn font_files_are_copied_and_described() {
         out_dir: b.site(),
         today: None,
         title: None,
+        theme: None,
     })
     .unwrap_err();
     assert!(matches!(err, okf_web::SiteError::Config(_)), "{err:?}");
     let message = err.to_string();
     assert!(message.contains("ghost.woff2"), "{message}");
     assert!(message.contains(".okf/fonts"), "{message}");
+}
+
+/// The default site ships the built-in catalog and nothing generated: the
+/// picker is in the header, the pre-paint boot carries the catalog as its
+/// allowlist, and no `assets/theme.css` is written or linked.
+#[test]
+fn builtin_themes_ship_without_a_generated_stylesheet() {
+    let b = fixture("themes-builtin", false);
+    run(&b, None);
+
+    assert!(!b.site().join("assets/theme.css").exists());
+    for page in ["index.html", "policies/travel.html", "__okf/graph.html"] {
+        let html = b.page(page);
+        assert!(!html.contains("theme.css"), "no theme.css on {page}");
+        assert!(
+            html.contains(r#"<ul class="theme-menu" role="menu""#),
+            "picker menu on {page}: {html}"
+        );
+        for (id, label) in [
+            ("auto", "Auto (system)"),
+            ("light", "Light"),
+            ("dark", "Dark"),
+            ("sepia", "Sepia"),
+            ("contrast", "High contrast"),
+        ] {
+            assert!(
+                html.contains(&format!(r#"data-theme-id="{id}""#)),
+                "menu item {id} on {page}"
+            );
+            assert!(html.contains(label), "menu label {label} on {page}");
+        }
+        // `auto` is the absence of both attributes, so it carries no scheme.
+        assert!(
+            html.contains(
+                "<button class=\"theme-item\" type=\"button\" role=\"menuitemradio\" \
+                 data-theme-id=\"auto\" aria-checked=\"true\">Auto (system)</button>"
+            ),
+            "auto item has no scheme and is the default: {html}"
+        );
+        assert!(
+            html.contains(r#"var S = {'light':'light','dark':'dark','sepia':'light',"#),
+            "boot inlines the catalog: {html}"
+        );
+        assert!(html.contains("D = 'auto'"), "auto is the default: {html}");
+    }
+}
+
+/// A bundle palette becomes a `[data-theme]` block in `assets/theme.css`,
+/// linked after the inline stylesheet (and after `fonts.css`) at every page
+/// depth, and a menu entry after the built-ins.
+#[test]
+fn configured_themes_are_emitted_and_offered() {
+    let b = fixture("themes-config", false);
+    b.write(
+        ".okf/config.yaml",
+        "site:\n  theme: nord\n  fonts:\n    body: Newsreader, serif\n  themes:\n    \
+         - id: nord\n      label: Nord\n      scheme: dark\n      colors:\n        \
+         ink: \"#eceff4\"\n        surface: \"#2e3440\"\n",
+    );
+    let summary = run(&b, None);
+    assert!(summary.config_settings.contains(&"themes"), "{summary:?}");
+    assert!(summary.config_settings.contains(&"theme"), "{summary:?}");
+
+    let css = b.page("assets/theme.css");
+    assert!(
+        css.contains(":root[data-theme=\"nord\"] {\n  --surface: #2e3440;\n  --ink: #eceff4;\n}\n"),
+        "canonical token order, constructed values: {css}"
+    );
+
+    let dash = b.page("index.html");
+    let fonts_at = dash.find(r#"href="assets/fonts.css""#).expect("fonts link");
+    let theme_at = dash.find(r#"href="assets/theme.css""#).expect("theme link");
+    let style_end = dash.find("</style>").expect("inline stylesheet");
+    assert!(
+        style_end < fonts_at && fonts_at < theme_at,
+        "generated sheets follow the inline one, palettes last"
+    );
+    assert!(
+        b.page("policies/travel.html")
+            .contains(r#"<link rel="stylesheet" href="../assets/theme.css">"#),
+        "nested page climbs one level"
+    );
+    assert!(
+        dash.contains(r#"data-theme-id="nord" data-theme-scheme="dark" aria-checked="true""#),
+        "the configured theme is offered and is the build default: {dash}"
+    );
+    assert!(
+        dash.contains("D = 'nord'") && dash.contains("'nord':'dark'"),
+        "the boot applies it before first paint: {dash}"
+    );
+}
+
+/// A bundle theme may take a built-in id: the cascade overrides that
+/// palette's tokens, and the menu keeps one entry rather than growing a
+/// duplicate.
+#[test]
+fn a_configured_theme_may_shadow_a_builtin() {
+    let b = fixture("themes-shadow", false);
+    b.write(
+        ".okf/config.yaml",
+        "site:\n  themes:\n    - id: dark\n      scheme: dark\n      \
+         colors:\n        surface: \"#101014\"\n",
+    );
+    run(&b, None);
+    assert!(
+        b.page("assets/theme.css")
+            .contains(":root[data-theme=\"dark\"] {\n  --surface: #101014;\n}"),
+        "the override lands in the generated sheet"
+    );
+    let dash = b.page("index.html");
+    assert_eq!(
+        dash.matches(r#"data-theme-id="dark""#).count(),
+        1,
+        "no duplicate menu entry: {dash}"
+    );
+    assert!(
+        dash.contains(r#"data-theme-id="dark" data-theme-scheme="dark""#),
+        "the built-in entry is kept: {dash}"
+    );
+}
+
+/// A default theme nothing defines fails the build, and the two sources
+/// report differently: the config path for `site.theme`, the caller's own
+/// mistake for the option.
+#[test]
+fn an_unknown_default_theme_fails_the_build() {
+    let b = fixture("themes-unknown", false);
+
+    let err = run_themed(&b, Some("nord")).unwrap_err();
+    assert!(matches!(err, SiteError::Theme(_)), "{err:?}");
+    let message = err.to_string();
+    assert!(message.contains("`nord` is not one of"), "{message}");
+    assert!(
+        message.contains("auto, light, dark, sepia, contrast"),
+        "{message}"
+    );
+
+    b.write(".okf/config.yaml", "site:\n  theme: nord\n");
+    let err = run_themed(&b, None).unwrap_err();
+    assert!(matches!(err, SiteError::Config(_)), "{err:?}");
+    let message = err.to_string();
+    assert!(message.contains("`site.theme` names `nord`"), "{message}");
+    assert!(message.contains(".okf/config.yaml"), "{message}");
+
+    // The option still overrides the config — including back to a theme
+    // that does exist.
+    let summary = run_themed(&b, Some("sepia")).expect("option wins");
+    assert!(summary.pages > 0);
+    assert!(b.page("index.html").contains("D = 'sepia'"));
 }

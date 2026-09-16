@@ -220,7 +220,8 @@ fn renderer_survives_adversarial_input() {
 #[test]
 fn renderer_expands_wikilinks_into_anchor_links() {
     let theme = okf_studio::theme::Theme::with_color(false);
-    let body = "# Title\n\nSee [[Pricing Tiers]] and `[[not a link]]`.\n\n## Pricing Tiers\n\nText.\n";
+    let body =
+        "# Title\n\nSee [[Pricing Tiers]] and `[[not a link]]`.\n\n## Pricing Tiers\n\nText.\n";
     let doc = okf_studio::markdown::render_document(body, 60, &theme, None);
     assert_eq!(doc.links.len(), 1, "{:?}", doc.links);
     match &doc.links[0].kind {
@@ -243,7 +244,10 @@ fn renderer_expands_wikilinks_into_anchor_links() {
         })
         .collect();
     assert!(text.contains("→Pricing Tiers"), "{text}");
-    assert!(text.contains("[[not a link]]"), "code span verbatim: {text}");
+    assert!(
+        text.contains("[[not a link]]"),
+        "code span verbatim: {text}"
+    );
 }
 
 #[test]
