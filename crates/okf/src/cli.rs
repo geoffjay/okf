@@ -20,7 +20,7 @@
 //!   search       <query...> Search metadata and body text (--json, --today, --limit).
 //!   parse        <file>     Parse one concept document and print its structure (--json).
 //!   studio       [bundle]   Open the interactive terminal studio (--today, --tab, --no-watch).
-//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out, --title, --theme).
+//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out, --title, --theme, --scheme).
 //! ```
 
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -102,6 +102,19 @@ fn install_broken_pipe_hook() {
 
 fn parse_date(raw: &str) -> Result<Date, String> {
     Date::parse(raw).ok_or_else(|| format!("--today is not a YYYY-MM-DD date: {raw}"))
+}
+
+/// Parses `--scheme`: the appearance a generated site opens in.
+#[cfg(feature = "site")]
+fn parse_scheme(raw: &str) -> Result<okf_web::config::SchemePref, String> {
+    use okf_web::config::SchemePref;
+
+    match raw {
+        "auto" => Ok(SchemePref::Auto),
+        "light" => Ok(SchemePref::Light),
+        "dark" => Ok(SchemePref::Dark),
+        other => Err(format!("--scheme is auto, light, or dark: {other}")),
+    }
 }
 
 static CLI_VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
@@ -749,10 +762,16 @@ pub struct SiteArgs {
     #[arg(long, value_name = "TITLE")]
     pub title: Option<String>,
 
-    /// Theme a first-time visitor sees, by id (overrides `site.theme` in
-    /// `.okf/config.yaml`; defaults to "auto", the system preference)
+    /// Theme family a first-time visitor sees, by id (overrides
+    /// `site.theme` in `.okf/config.yaml`; defaults to "default")
     #[arg(long, value_name = "ID")]
     pub theme: Option<String>,
+
+    /// Appearance a first-time visitor sees: auto, light, or dark
+    /// (overrides `site.scheme` in `.okf/config.yaml`; defaults to "auto",
+    /// the system preference)
+    #[arg(long, value_name = "SCHEME", value_parser = parse_scheme)]
+    pub scheme: Option<okf_web::config::SchemePref>,
 }
 
 /// Runs the `okf` CLI on `args` (the program name already stripped) and
@@ -850,8 +869,8 @@ fn cmd_studio(args: &StudioArgs) -> Result<ExitCode, CliError> {
 /// runs so a missing or unreadable bundle fails early with the same
 /// well-coded exit as every other subcommand. Site never takes `--json`:
 /// like studio, it *is* the presentation. Per-bundle settings come from
-/// `.okf/config.yaml`, which okf-web reads itself; `--title` and `--theme`
-/// override it.
+/// `.okf/config.yaml`, which okf-web reads itself; `--title`, `--theme`,
+/// and `--scheme` override it.
 #[cfg(feature = "site")]
 fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
     let _ = load(&args.bundle)?;
@@ -862,6 +881,7 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
         today: args.today,
         title: args.title.clone(),
         theme: args.theme.clone(),
+        scheme: args.scheme,
     })
     .map_err(|e| CliError::data(format!("site failed: {e}")))?;
 
@@ -904,6 +924,9 @@ fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
     }
     if summary.config_settings.contains(&"theme") && args.theme.is_some() {
         println!("  note: --theme overrode `site.theme`");
+    }
+    if summary.config_settings.contains(&"scheme") && args.scheme.is_some() {
+        println!("  note: --scheme overrode `site.scheme`");
     }
     Ok(ExitCode::SUCCESS)
 }

@@ -22,23 +22,31 @@
  *
  * A theme is a set of token *values*, never a set of rules, which is what
  * lets a visitor switch one at runtime against this precompiled stylesheet.
- * The choice is two attributes on `<html>`, applied by the theme bootstrap
+ * Two independent axes, both applied to `<html>` by the theme bootstrap
  * before first paint:
  *
- * - `data-scheme` (`light`/`dark`, absent = follow the system) selects the
- *   base palette and everything else that is really a light/dark question:
- *   `color-scheme`, which shiki variable resolves, and which glyph the theme
- *   button shows.
- * - `data-theme` (a palette id, absent = the scheme's base) layers token
- *   overrides on top. The built-in palettes are the `[data-theme]` blocks
- *   below; a bundle's own palettes arrive in a generated `assets/theme.css`
- *   linked after this stylesheet, which wins the equal-specificity tie on
- *   source order. Because the scheme block seeds everything a palette omits,
- *   a theme names only the tokens it actually changes.
+ * - `data-scheme` (`light`/`dark`, absent = follow the system) is the
+ *   appearance. It selects the base palette and everything else that is
+ *   really a light/dark question: `color-scheme`, which shiki variable
+ *   resolves, which mermaid mode renders, and which glyph the theme button
+ *   shows.
+ * - `data-theme` (a family id, absent = the built-in `default` family)
+ *   layers token overrides for *that appearance*. A family has up to two
+ *   variants, so every block below is scoped to one scheme — explicitly
+ *   (`[data-scheme="dark"]`) and through the media query for the
+ *   attribute-less `auto` case. A variant a family does not define is
+ *   simply absent, and the base palette shows through: `sepia` is
+ *   light-only, so choosing it and then switching to dark gives the
+ *   standard dark palette.
  *
- * With neither attribute — no JavaScript, no stored choice — this is exactly
- * a light stylesheet with a `prefers-color-scheme` override, which is what
- * the site was before themes existed.
+ * Family blocks outrank the base blocks by specificity (0-3-0 against
+ * 0-2-0) whatever their order, and a bundle's own families arrive in a
+ * generated `assets/theme.css` linked after this stylesheet.
+ *
+ * With neither attribute — no JavaScript, no stored choice, no pinned
+ * default — this is exactly a light stylesheet with a
+ * `prefers-color-scheme` override, which is what the site was before
+ * themes existed.
  */
 :root {
   /* Light values are the defaults; dark arrives through the media query
@@ -138,18 +146,25 @@
 }
 
 /*
- * Built-in palettes. Each overrides only the tokens it changes; its scheme
- * block supplies the rest, which is also what makes the shiki, mermaid, and
- * theme-glyph rules below correct for a palette they have never heard of.
- * `BUILTIN_THEMES` in `render.rs` names the same ids and schemes, and a unit
- * test there asserts every id still has a block here.
+ * Built-in families. Each variant is written twice — once for the explicit
+ * appearance, once for the attribute-less `auto` case behind the matching
+ * media query — because a media query cannot be folded into a selector
+ * list, the same duplication the dark base above pays. A family overrides
+ * only the tokens it changes; the base block supplies the rest, which is
+ * also what makes the shiki, mermaid, and theme-glyph rules below correct
+ * for a palette they have never heard of.
+ *
+ * `BUILTIN_THEMES` in `render.rs` names the same ids and the same variants,
+ * and a unit test there asserts every one still has a block here.
  */
 
-/* sepia — a warm paper light theme for long reading. The amber and green
-   accents drop a step: on a warm ground the light base's 700s measure 4.30
-   and 4.21 against the surface, just under AA for the badge text they
-   color, and the 800s restore it at 6.07 and 6.04. */
-:root[data-theme="sepia"] {
+/* sepia — warm paper for long reading, light only: choosing it and then
+   switching to dark falls through to the standard dark palette, which is
+   the family fallback rule working as intended. The amber and green accents
+   drop a step: on a warm ground the light base's 700s measure 4.30 and 4.21
+   against the surface, just under AA for the badge text they color, and the
+   800s restore it at 6.07 and 6.04. */
+:root[data-theme="sepia"][data-scheme="light"] {
   --surface: oklch(94.5% 0.018 88);
   --ink: oklch(25% 0.025 60);
   --edge: oklch(85% 0.028 82);
@@ -166,11 +181,75 @@
   --sev-info: oklch(42% 0.02 70);
   --sev-warning: oklch(47.3% 0.137 46.201); /* amber-800 */
 }
+@media (prefers-color-scheme: light) {
+  :root[data-theme="sepia"]:not([data-scheme]) {
+    --surface: oklch(94.5% 0.018 88);
+    --ink: oklch(25% 0.025 60);
+    --edge: oklch(85% 0.028 82);
+    --link: oklch(46% 0.13 42);
+    --shadow: oklch(35% 0.05 70 / 0.18);
+    --panel-bg: oklch(97% 0.014 88);
+    --code-bg: oklch(90.5% 0.024 86);
+    --mermaid-bg: oklch(97% 0.014 88);
+    --tier-unverified: oklch(47.3% 0.137 46.201); /* amber-800 */
+    --tier-human: oklch(44.8% 0.119 151.328); /* green-800 */
+    --status-draft: oklch(47.3% 0.137 46.201); /* amber-800 */
+    --status-stable: oklch(44.8% 0.119 151.328); /* green-800 */
+    --status-other: oklch(42% 0.02 70);
+    --sev-info: oklch(42% 0.02 70);
+    --sev-warning: oklch(47.3% 0.137 46.201); /* amber-800 */
+  }
+}
 
-/* contrast — a maximum-separation dark theme: pure black ground, pure white
-   ink, and badge accents lifted to the 300 steps so every one of them clears
-   WCAG AAA on the ground. */
-:root[data-theme="contrast"] {
+/* contrast — maximum separation, both appearances: pure ground against pure
+   ink, with badge accents pushed to the scale ends (300s on black, 900s on
+   white) so every one of them clears WCAG AAA. An accessibility theme that
+   only worked in the dark would be a strange thing to ship. */
+:root[data-theme="contrast"][data-scheme="light"] {
+  --surface: oklch(100% 0 0);
+  --ink: oklch(0% 0 0);
+  --edge: oklch(45% 0 0);
+  --link: oklch(38.1% 0.176 304.987); /* violet-900 */
+  --shadow: oklch(0% 0 0 / 0.35);
+  --panel-bg: oklch(97% 0 0);
+  --code-bg: oklch(94% 0 0);
+  --mermaid-bg: oklch(97% 0 0);
+  --tier-unverified: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --tier-machine: oklch(38.1% 0.176 304.987); /* violet-900 */
+  --tier-human: oklch(39.3% 0.095 152.535); /* green-900 */
+  --status-draft: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --status-stable: oklch(39.3% 0.095 152.535); /* green-900 */
+  --status-deprecated: oklch(39.6% 0.141 25.723); /* red-900 */
+  --status-other: oklch(25% 0 0);
+  --sev-info: oklch(25% 0 0);
+  --sev-warning: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --sev-error: oklch(39.6% 0.141 25.723); /* red-900 */
+  --danger: oklch(39.6% 0.141 25.723); /* red-900 */
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="contrast"]:not([data-scheme]) {
+    --surface: oklch(100% 0 0);
+    --ink: oklch(0% 0 0);
+    --edge: oklch(45% 0 0);
+    --link: oklch(38.1% 0.176 304.987); /* violet-900 */
+    --shadow: oklch(0% 0 0 / 0.35);
+    --panel-bg: oklch(97% 0 0);
+    --code-bg: oklch(94% 0 0);
+    --mermaid-bg: oklch(97% 0 0);
+    --tier-unverified: oklch(41.4% 0.112 45.904); /* amber-900 */
+    --tier-machine: oklch(38.1% 0.176 304.987); /* violet-900 */
+    --tier-human: oklch(39.3% 0.095 152.535); /* green-900 */
+    --status-draft: oklch(41.4% 0.112 45.904); /* amber-900 */
+    --status-stable: oklch(39.3% 0.095 152.535); /* green-900 */
+    --status-deprecated: oklch(39.6% 0.141 25.723); /* red-900 */
+    --status-other: oklch(25% 0 0);
+    --sev-info: oklch(25% 0 0);
+    --sev-warning: oklch(41.4% 0.112 45.904); /* amber-900 */
+    --sev-error: oklch(39.6% 0.141 25.723); /* red-900 */
+    --danger: oklch(39.6% 0.141 25.723); /* red-900 */
+  }
+}
+:root[data-theme="contrast"][data-scheme="dark"] {
   --surface: oklch(0% 0 0);
   --ink: oklch(100% 0 0);
   --edge: oklch(65% 0 0);
@@ -190,6 +269,29 @@
   --sev-warning: oklch(87.9% 0.169 91.605); /* amber-300 */
   --sev-error: oklch(80.8% 0.114 19.571); /* red-300 */
   --danger: oklch(80.8% 0.114 19.571); /* red-300 */
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="contrast"]:not([data-scheme]) {
+    --surface: oklch(0% 0 0);
+    --ink: oklch(100% 0 0);
+    --edge: oklch(65% 0 0);
+    --link: oklch(85% 0.12 293.5);
+    --shadow: oklch(0% 0 0 / 0.8);
+    --panel-bg: oklch(15% 0 0);
+    --code-bg: oklch(18% 0 0);
+    --mermaid-bg: oklch(15% 0 0);
+    --tier-unverified: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --tier-machine: oklch(81.1% 0.111 293.571); /* violet-300 */
+    --tier-human: oklch(87.1% 0.15 154.449); /* green-300 */
+    --status-draft: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --status-stable: oklch(87.1% 0.15 154.449); /* green-300 */
+    --status-deprecated: oklch(80.8% 0.114 19.571); /* red-300 */
+    --status-other: oklch(92% 0 0);
+    --sev-info: oklch(92% 0 0);
+    --sev-warning: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --sev-error: oklch(80.8% 0.114 19.571); /* red-300 */
+    --danger: oklch(80.8% 0.114 19.571); /* red-300 */
+  }
 }
 
 @layer base {
@@ -495,16 +597,28 @@
     @apply hidden;
   }
 
+  /* The menu holds two radio groups — the appearance axis and the theme
+     axis — so it is a <div> of labelled <ul>s rather than one list. */
   .theme-menu {
-    @apply absolute right-0 z-50 mt-1 list-none rounded-md p-1;
+    @apply absolute right-0 z-50 mt-1 rounded-md p-1;
     min-width: 11rem;
-    margin-bottom: 0;
     border: 1px solid var(--edge);
     background: var(--panel-bg);
     box-shadow: 0 10px 30px var(--shadow);
   }
   .theme-menu[hidden] {
     @apply hidden;
+  }
+  .theme-menu ul {
+    @apply m-0 list-none p-0;
+  }
+  .theme-menu .theme-group {
+    @apply px-2 pt-1 pb-0.5 text-xs font-semibold tracking-wide uppercase;
+    margin: 0;
+    opacity: 0.6;
+  }
+  .theme-menu .theme-group + ul {
+    @apply mb-1;
   }
   .theme-menu .theme-item {
     @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-sm;
@@ -524,6 +638,13 @@
   }
   .theme-menu .theme-item[aria-checked="true"]::before {
     opacity: 1;
+  }
+  /* Single-variant families say so: the other appearance falls through to
+     the base palette, which is a rule worth reading, not a bug. */
+  .theme-menu .theme-item .theme-variant {
+    @apply ml-auto pl-3 text-xs;
+    color: var(--ink);
+    opacity: 0.55;
   }
   .theme-menu .theme-item:hover,
   .theme-menu .theme-item:focus-visible {

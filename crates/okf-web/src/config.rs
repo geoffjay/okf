@@ -23,6 +23,7 @@
 //!         weight: 700
 //!         style: italic
 //!   theme: nord
+//!   scheme: dark
 //!   themes:
 //!     - id: nord
 //!       label: "Nord"
@@ -30,7 +31,29 @@
 //!       colors:
 //!         surface: "#2e3440"
 //!         ink: "#eceff4"
+//!     - id: nord
+//!       scheme: light
+//!       colors:
+//!         surface: "#eceff4"
+//!         ink: "#2e3440"
 //! ```
+//!
+//! ## Themes are families; the appearance is a separate axis
+//!
+//! `site.themes` lists *variants*, not themes: one entry is one palette for
+//! one side of the light/dark axis, and entries sharing an `id` merge into
+//! a single **family**. The family is what the picker lists, what
+//! `site.theme` names, and what `data-theme` carries; which of its up-to-two
+//! variants a reader sees is the independent `site.scheme` axis (`auto`,
+//! `light`, `dark`), which the reader flips at will. Families keep
+//! first-appearance order, and either entry may carry the `label` as long as
+//! the two do not disagree — one menu entry, one label.
+//!
+//! A family may define one variant only. The other side is not
+//! synthesized and emits nothing, so the built-in base palette shows
+//! through: a light-only family under a dark appearance *is* the built-in
+//! dark. [`DEFAULT_THEME_ID`] names that built-in family, and a bundle
+//! restyles it by defining variants under that id.
 //!
 //! ## Permissive content, strict tooling
 //!
@@ -109,13 +132,18 @@ pub struct SiteConfig {
     pub title: Option<String>,
     /// `site.fonts` — the typography token overrides and self-hosted faces.
     pub fonts: Fonts,
-    /// `site.theme` — the theme a first-time visitor gets, overridden by
-    /// `okf site --theme`. [`AUTO_THEME_ID`] means "follow the system".
-    /// Whether the id names a theme the site has is the build's question,
-    /// not this parser's: the catalog is the built-ins plus [`Self::themes`].
+    /// `site.theme` — the theme *family* a first-time visitor gets,
+    /// overridden by `okf site --theme`. [`DEFAULT_THEME_ID`] names the
+    /// built-in family. Whether the id names a family the site has is the
+    /// build's question, not this parser's: the catalog is the built-in
+    /// family plus [`Self::themes`].
     pub theme: Option<String>,
-    /// `site.themes` — the palettes this bundle adds to the built-in
-    /// catalog, emitted as `assets/theme.css`.
+    /// `site.scheme` — the appearance a first visit gets, overridden by the
+    /// reader's own choice. `None` when the key is absent, which the build
+    /// reads as [`SchemePref::Auto`].
+    pub scheme: Option<SchemePref>,
+    /// `site.themes` — the theme families this bundle defines, merged from
+    /// the file's per-variant entries and emitted as `assets/theme.css`.
     pub themes: Themes,
     /// Sections the file carries that this version of `okf` does not know,
     /// reported by the build rather than rejected.
@@ -146,12 +174,12 @@ impl SiteConfig {
     }
 
     /// Which `site:` settings this configuration supplies, in schema order —
-    /// `title`, `fonts.body`, `fonts.code`, `fonts.files`, `theme`, and
-    /// `themes` — the build reports them so an ignored key or an unset
-    /// section is visible without re-reading the file.
+    /// `title`, `fonts.body`, `fonts.code`, `fonts.files`, `theme`,
+    /// `scheme`, and `themes` — the build reports them so an ignored key or
+    /// an unset section is visible without re-reading the file.
     #[must_use]
     pub fn settings(&self) -> Vec<&'static str> {
-        let mut settings = Vec::with_capacity(6);
+        let mut settings = Vec::with_capacity(7);
         if self.title.is_some() {
             settings.push("title");
         }
@@ -166,6 +194,9 @@ impl SiteConfig {
         }
         if self.theme.is_some() {
             settings.push("theme");
+        }
+        if self.scheme.is_some() {
+            settings.push("scheme");
         }
         if !self.themes.is_empty() {
             settings.push("themes");
@@ -205,7 +236,7 @@ impl SiteConfig {
 
     /// Reads the `site:` section into `self`.
     fn read_site(&mut self, value: &Value) -> Result<(), ConfigErrorKind> {
-        const KNOWN: &[&str] = &["title", "fonts", "theme", "themes"];
+        const KNOWN: &[&str] = &["title", "fonts", "theme", "scheme", "themes"];
 
         let Some(map) = mapping_or_empty(value, "site")? else {
             return Ok(());
@@ -236,12 +267,17 @@ impl SiteConfig {
                 if theme.is_empty() {
                     return Err(invalid("`site.theme` must not be empty"));
                 }
-                if theme != AUTO_THEME_ID {
-                    theme_id(theme, "site.theme")?;
+                if RESERVED_THEME_IDS.contains(&theme) {
+                    return Err(invalid(format!(
+                        "`site.theme`: `{theme}` names an appearance, not a \
+                         theme; write `site.scheme: {theme}` instead"
+                    )));
                 }
+                theme_id(theme, "site.theme")?;
                 self.theme = Some(theme.to_string());
             }
         }
+        self.scheme = SchemePref::read(map.get("scheme"))?;
         if let Some(value) = map.get("themes") {
             self.themes = Themes::read(value)?;
         }
@@ -562,78 +598,100 @@ impl FontStyle {
     }
 }
 
-/// The `site.themes` list: the palettes a bundle adds to the built-in
-/// catalog, in the order the file declares them.
+/// The `site.themes` list, merged into theme families: the palettes a
+/// bundle adds to the catalog, in first-appearance order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Themes(Vec<Theme>);
 
 impl Themes {
-    /// `true` when the bundle defines no themes, in which case the build
+    /// `true` when the bundle defines no families, in which case the build
     /// writes no `assets/theme.css` and links nothing.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// How many themes the bundle defines.
+    /// How many families the bundle defines — families, not entries: two
+    /// variants of one id are one.
     #[must_use]
     pub const fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// The themes, in configuration order — the order the picker lists them
-    /// in, after the built-in entries.
+    /// The families, in first-appearance order — the order the picker lists
+    /// them in, after the built-in entry.
     pub fn iter(&self) -> std::slice::Iter<'_, Theme> {
         self.0.iter()
     }
 
-    /// The generated `assets/theme.css`: one `:root[data-theme="…"]` block
-    /// per theme that overrides at least one token.
+    /// The generated `assets/theme.css`: per family, the light variant then
+    /// the dark one, and per variant the explicit `data-scheme` rule then
+    /// the `prefers-color-scheme` rule that covers the auto appearance.
     ///
     /// Declarations are emitted in [`THEME_TOKENS`] order rather than the
-    /// author's, so one palette always produces one set of bytes. A theme
-    /// that declares only a scheme contributes no block: it *is* the base
-    /// palette its scheme selects, and that palette is already compiled into
-    /// the inline stylesheet. Every byte is constructed from validated
+    /// author's, so one palette always produces one set of bytes. A variant
+    /// the family does not define — or defines without colors — emits
+    /// nothing at all, which is precisely how the built-in base palette
+    /// shows through on that side. Every byte is constructed from validated
     /// values (see the module docs).
     #[must_use]
     pub fn to_css(&self) -> String {
-        let mut css = String::with_capacity(GENERATED_HEADER.len() + self.0.len() * 200);
+        let mut css = String::with_capacity(GENERATED_HEADER.len() + self.0.len() * 420);
         css.push_str(GENERATED_HEADER);
         for theme in &self.0 {
-            if theme.colors.is_empty() {
-                continue;
+            // The built-in family is the one a page wears with no
+            // `data-theme` at all, so it selects on the attribute's absence
+            // rather than on its value.
+            let root = if theme.id == DEFAULT_THEME_ID {
+                ":root:not([data-theme])".to_string()
+            } else {
+                format!(":root[data-theme=\"{}\"]", theme.id)
+            };
+            for scheme in [Scheme::Light, Scheme::Dark] {
+                let Some(colors) = theme.palette(scheme).filter(|colors| !colors.is_empty()) else {
+                    continue;
+                };
+                let scheme = scheme.as_css();
+                css.push('\n');
+                write_rule(
+                    &mut css,
+                    &format!("{root}[data-scheme=\"{scheme}\"]"),
+                    colors,
+                    "",
+                );
+                let _ = writeln!(css, "\n@media (prefers-color-scheme: {scheme}) {{");
+                write_rule(
+                    &mut css,
+                    &format!("{root}:not([data-scheme])"),
+                    colors,
+                    "  ",
+                );
+                css.push_str("}\n");
             }
-            let _ = write!(css, "\n:root[data-theme=\"{}\"] {{\n", theme.id);
-            for (token, color) in &theme.colors {
-                let _ = writeln!(css, "  --{token}: {};", color.as_css());
-            }
-            css.push_str("}\n");
         }
         css
     }
 
-    /// Reads the `site.themes` list.
+    /// Reads the `site.themes` list, folding each entry into the family its
+    /// `id` names.
     fn read(value: &Value) -> Result<Self, ConfigErrorKind> {
-        let themes = match value {
+        let entries = match value {
             Value::Null => Vec::new(),
             Value::Sequence(items) => items
                 .iter()
                 .enumerate()
-                .map(|(index, item)| Theme::read(item, index))
+                .map(|(index, item)| ThemeEntry::read(item, index))
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(invalid("`site.themes` must be a list")),
         };
-        for (index, theme) in themes.iter().enumerate() {
-            if themes[..index].iter().any(|prior| prior.id == theme.id) {
-                return Err(invalid(format!(
-                    "`site.themes[{index}]`: duplicate theme id `{}`; each id \
-                     names one palette",
-                    theme.id
-                )));
+        let mut families: Vec<Theme> = Vec::with_capacity(entries.len());
+        for entry in entries {
+            match families.iter_mut().find(|family| family.id == entry.id) {
+                Some(family) => family.merge(entry)?,
+                None => families.push(Theme::from_entry(entry)),
             }
         }
-        Ok(Self(themes))
+        Ok(Self(families))
     }
 }
 
@@ -646,12 +704,32 @@ impl<'a> IntoIterator for &'a Themes {
     }
 }
 
-/// The theme id meaning "follow the system preference".
+/// Writes one rule — selector, declarations, closing brace — at `indent`,
+/// which is `"  "` for the rule nested inside a media query and `""` for
+/// the one at the top level.
+fn write_rule(css: &mut String, selector: &str, colors: &Palette, indent: &str) {
+    let _ = writeln!(css, "{indent}{selector} {{");
+    for (token, color) in colors {
+        let _ = writeln!(css, "{indent}  --{token}: {};", color.as_css());
+    }
+    let _ = writeln!(css, "{indent}}}");
+}
+
+/// The id of the built-in family: the palettes compiled into the inline
+/// stylesheet, and the family a page wears when it carries no `data-theme`.
 ///
-/// It is the catalog's first entry and the behavior of a site that
-/// configures nothing. A bundle may select it with `site.theme`, but may
-/// not define a theme with it.
-pub const AUTO_THEME_ID: &str = "auto";
+/// A bundle may define variants under it — that restyles the built-in
+/// family rather than adding a menu entry — and `site.theme` may name it to
+/// say "start on the standard palettes".
+pub const DEFAULT_THEME_ID: &str = "default";
+
+/// The ids a theme may not take: they name appearances, which is the
+/// `site.scheme` axis, not families.
+///
+/// Keeping them out of the id space is what lets one stored string mean a
+/// family and another mean an appearance without either shadowing the
+/// other.
+pub const RESERVED_THEME_IDS: [&str; 3] = ["auto", "light", "dark"];
 
 /// The palette tokens a bundle theme may override, in emission order.
 ///
@@ -681,8 +759,17 @@ pub const THEME_TOKENS: [&str; 19] = [
     "danger",
 ];
 
-/// One bundle-defined palette: an identity, the light/dark base it sits on,
-/// and the tokens it overrides.
+/// A theme family's palette for one side of the light/dark axis: the
+/// tokens it overrides, in [`THEME_TOKENS`] order.
+type Palette = Vec<(&'static str, Color)>;
+
+/// One theme family: an identity, the menu label, and up to two palettes —
+/// one per side of the light/dark axis.
+///
+/// A family is what the picker lists and what `data-theme` carries; the
+/// side is the reader's independent choice. A family that defines one
+/// variant only leaves the other to the built-in base palette, which is
+/// why both are optional rather than one being derived from the other.
 ///
 /// Fields are private because their values are CSS: only [`SiteConfig::load`]
 /// builds one, and it only builds validated ones.
@@ -690,8 +777,8 @@ pub const THEME_TOKENS: [&str; 19] = [
 pub struct Theme {
     id: String,
     label: Option<String>,
-    scheme: Scheme,
-    colors: Vec<(&'static str, Color)>,
+    light: Option<Palette>,
+    dark: Option<Palette>,
 }
 
 impl Theme {
@@ -702,19 +789,89 @@ impl Theme {
         &self.id
     }
 
-    /// The picker's menu text — the id when the theme configures no `label`.
-    /// It is HTML, escaped like every other interpolated string, not CSS.
+    /// The picker's menu text — the id when no variant configures a
+    /// `label`. It is HTML, escaped like every other interpolated string,
+    /// not CSS.
     #[must_use]
     pub fn label(&self) -> &str {
         self.label.as_deref().unwrap_or(&self.id)
     }
 
-    /// The light/dark base the palette overrides.
+    /// Whether the family defines the `scheme` variant. When it does not,
+    /// the stylesheet says nothing about that appearance and the built-in
+    /// base palette is what the reader gets.
     #[must_use]
-    pub const fn scheme(&self) -> Scheme {
-        self.scheme
+    pub const fn has(&self, scheme: Scheme) -> bool {
+        self.palette(scheme).is_some()
     }
 
+    /// The palette for one side of the axis, absent when the family leaves
+    /// that side to the built-in base.
+    const fn palette(&self, scheme: Scheme) -> Option<&Palette> {
+        match scheme {
+            Scheme::Light => self.light.as_ref(),
+            Scheme::Dark => self.dark.as_ref(),
+        }
+    }
+
+    /// The family a first entry opens: one variant, no other side yet.
+    fn from_entry(entry: ThemeEntry) -> Self {
+        let (light, dark) = match entry.scheme {
+            Scheme::Light => (Some(entry.colors), None),
+            Scheme::Dark => (None, Some(entry.colors)),
+        };
+        Self {
+            id: entry.id,
+            label: entry.label,
+            light,
+            dark,
+        }
+    }
+
+    /// Folds a later entry with this family's id into it: the other
+    /// variant, and at most one label across the two.
+    fn merge(&mut self, entry: ThemeEntry) -> Result<(), ConfigErrorKind> {
+        let at = format!("site.themes[{}]", entry.index);
+        let scheme = entry.scheme.as_css();
+        let slot = match entry.scheme {
+            Scheme::Light => &mut self.light,
+            Scheme::Dark => &mut self.dark,
+        };
+        if slot.is_some() {
+            return Err(invalid(format!(
+                "`{at}`: theme `{}` already defines its `{scheme}` variant; \
+                 an id has one `light` entry and one `dark` one",
+                self.id
+            )));
+        }
+        *slot = Some(entry.colors);
+        match (self.label.as_deref(), entry.label) {
+            (Some(first), Some(second)) if first != second => {
+                return Err(invalid(format!(
+                    "`{at}.label`: theme `{}` is already labelled {first:?}; \
+                     its variants are one menu entry, so they need one label \
+                     (got {second:?})",
+                    self.id
+                )));
+            }
+            (None, label) => self.label = label,
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+/// One `site.themes` entry: a single variant, before [`Themes::read`]
+/// merges it into the family its `id` names.
+struct ThemeEntry {
+    index: usize,
+    id: String,
+    label: Option<String>,
+    scheme: Scheme,
+    colors: Palette,
+}
+
+impl ThemeEntry {
     /// Reads one `site.themes` entry.
     fn read(value: &Value, index: usize) -> Result<Self, ConfigErrorKind> {
         const KNOWN: &[&str] = &["id", "label", "scheme", "colors"];
@@ -722,13 +879,15 @@ impl Theme {
         let at = format!("site.themes[{index}]");
         let map = value
             .as_mapping()
-            .ok_or_else(|| invalid(format!("`{at}` must be a mapping with `id` and `scheme`")))?;
+            .ok_or_else(|| invalid(format!("`{at}` must be a mapping with an `id`")))?;
         check_keys(map, &at, KNOWN)?;
         let id = required_str(map, "id", &at)?;
-        if id == AUTO_THEME_ID {
+        if RESERVED_THEME_IDS.contains(&id) {
             return Err(invalid(format!(
-                "`{at}.id`: `{AUTO_THEME_ID}` is reserved for the built-in \
-                 follow-the-system entry; choose another id"
+                "`{at}.id`: `{id}` is reserved — `{}` name appearances, not \
+                 themes; give the theme its own id and put the light/dark \
+                 side in its `scheme:` key",
+                RESERVED_THEME_IDS.join(", ")
             )));
         }
         let label = match map.get("label") {
@@ -745,6 +904,7 @@ impl Theme {
             }
         };
         Ok(Self {
+            index,
             id: theme_id(id, &format!("{at}.id"))?.to_string(),
             label,
             scheme: Scheme::read(map.get("scheme"), &at)?,
@@ -754,19 +914,16 @@ impl Theme {
 
     /// Reads the optional `colors` mapping into [`THEME_TOKENS`] order, so
     /// the emitted block does not depend on how the author sorted the keys.
-    fn read_colors(
-        value: Option<&Value>,
-        at: &str,
-    ) -> Result<Vec<(&'static str, Color)>, ConfigErrorKind> {
+    fn read_colors(value: Option<&Value>, at: &str) -> Result<Palette, ConfigErrorKind> {
         let Some(value) = value else {
-            return Ok(Vec::new());
+            return Ok(Palette::new());
         };
         let at = format!("{at}.colors");
         let Some(map) = mapping_or_empty(value, &at)? else {
-            return Ok(Vec::new());
+            return Ok(Palette::new());
         };
         check_keys(map, &at, &THEME_TOKENS)?;
-        let mut colors = Vec::new();
+        let mut colors = Palette::new();
         for token in THEME_TOKENS {
             match map.get(token) {
                 None | Some(Value::Null) => {}
@@ -777,8 +934,8 @@ impl Theme {
     }
 }
 
-/// The light/dark axis a theme sits on: the base palette it overrides, the
-/// `color-scheme` the page declares, the side of the code theme the
+/// One side of the light/dark axis: the base palette a variant overrides,
+/// the `color-scheme` the page declares, the side of the code theme the
 /// highlighter resolves, and which glyph the picker shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scheme {
@@ -798,19 +955,75 @@ impl Scheme {
         }
     }
 
-    /// Reads the required `scheme` key of the theme at configuration path
-    /// `at`. It is required because it cannot be inferred: with more than
-    /// two themes, "is this one dark?" stops being a question about the id.
+    /// Reads a variant's optional `scheme` key at configuration path `at`.
+    ///
+    /// It defaults to `light`, which is the side the stylesheet's own
+    /// `:root` block paints: a bundle that names no scheme has written the
+    /// palette it can see.
     fn read(value: Option<&Value>, at: &str) -> Result<Self, ConfigErrorKind> {
-        let Some(value) = value.filter(|value| !matches!(value, Value::Null)) else {
-            return Err(invalid(format!(
-                "`{at}` needs a `scheme` of `light` or `dark`"
-            )));
-        };
-        match value.as_str() {
-            Some("light") => Ok(Self::Light),
-            Some("dark") => Ok(Self::Dark),
-            _ => Err(invalid(format!("`{at}.scheme` must be `light` or `dark`"))),
+        match value {
+            None | Some(Value::Null) => Ok(Self::Light),
+            Some(value) => match value.as_str() {
+                Some("light") => Ok(Self::Light),
+                Some("dark") => Ok(Self::Dark),
+                _ => Err(invalid(format!("`{at}.scheme` must be `light` or `dark`"))),
+            },
+        }
+    }
+}
+
+/// The appearance a first visit gets: `site.scheme`, before the reader's
+/// own stored choice overrides it.
+///
+/// Not a [`Scheme`], because `auto` is a real setting rather than a third
+/// palette — only the browser can resolve it, which is why each variant is
+/// emitted twice, once for the pinned appearance and once under
+/// `prefers-color-scheme`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemePref {
+    /// Follow the system preference: the behavior of a site that
+    /// configures nothing, and no `data-scheme` on the page.
+    Auto,
+    /// Start light, whatever the system asks for.
+    Light,
+    /// Start dark, whatever the system asks for.
+    Dark,
+}
+
+impl SchemePref {
+    /// The configured spelling, which is also the `data-scheme` value for
+    /// the two pinned appearances.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    /// The side this preference pins, or `None` for [`Self::Auto`], which
+    /// pins nothing and leaves the choice to `prefers-color-scheme`.
+    #[must_use]
+    pub const fn scheme(self) -> Option<Scheme> {
+        match self {
+            Self::Auto => None,
+            Self::Light => Some(Scheme::Light),
+            Self::Dark => Some(Scheme::Dark),
+        }
+    }
+
+    /// Reads the optional `site.scheme` key; absent is `None`, which the
+    /// build reads as [`Self::Auto`].
+    fn read(value: Option<&Value>) -> Result<Option<Self>, ConfigErrorKind> {
+        match value {
+            None | Some(Value::Null) => Ok(None),
+            Some(value) => match value.as_str() {
+                Some("auto") => Ok(Some(Self::Auto)),
+                Some("light") => Ok(Some(Self::Light)),
+                Some("dark") => Ok(Some(Self::Dark)),
+                _ => Err(invalid("`site.scheme` must be one of: auto, light, dark")),
+            },
         }
     }
 }
@@ -1453,7 +1666,7 @@ mod tests {
     }
 
     #[test]
-    fn themes_emit_one_canonical_block_each() {
+    fn entries_sharing_an_id_merge_into_one_two_variant_family() {
         let config = config(
             r##"site:
   themes:
@@ -1463,19 +1676,18 @@ mod tests {
       colors:
         ink: "#ECEFF4"
         surface: "#2e3440"
-    - id: paper
+    - id: nord
       scheme: light
       colors:
         surface: "oklch(0.98 0.01 90 / 50%)"
 "##,
         );
-        assert_eq!(config.themes.len(), 2);
-        let themes: Vec<_> = config.themes.iter().collect();
-        assert_eq!(themes[0].id(), "nord");
-        assert_eq!(themes[0].label(), "Nord");
-        assert_eq!(themes[0].scheme(), Scheme::Dark);
-        assert_eq!(themes[1].label(), "paper");
-        assert_eq!(themes[1].scheme().as_css(), "light");
+        // One family, one menu entry, both sides of the axis.
+        assert_eq!(config.themes.len(), 1);
+        let nord = config.themes.iter().next().expect("one family");
+        assert_eq!(nord.id(), "nord");
+        assert_eq!(nord.label(), "Nord");
+        assert!(nord.has(Scheme::Light) && nord.has(Scheme::Dark));
         assert_eq!(config.settings(), ["themes"]);
         assert_eq!(
             config.themes.to_css(),
@@ -1484,16 +1696,147 @@ mod tests {
                 "   rebuild the site instead. Linked after the inline stylesheet, so\n",
                 "   these token overrides win the cascade. */\n",
                 "\n",
-                ":root[data-theme=\"nord\"] {\n",
+                ":root[data-theme=\"nord\"][data-scheme=\"light\"] {\n",
+                "  --surface: oklch(0.98 0.01 90 / 50%);\n",
+                "}\n",
+                "\n",
+                "@media (prefers-color-scheme: light) {\n",
+                "  :root[data-theme=\"nord\"]:not([data-scheme]) {\n",
+                "    --surface: oklch(0.98 0.01 90 / 50%);\n",
+                "  }\n",
+                "}\n",
+                "\n",
+                ":root[data-theme=\"nord\"][data-scheme=\"dark\"] {\n",
                 "  --surface: #2e3440;\n",
                 "  --ink: #eceff4;\n",
                 "}\n",
                 "\n",
-                ":root[data-theme=\"paper\"] {\n",
-                "  --surface: oklch(0.98 0.01 90 / 50%);\n",
+                "@media (prefers-color-scheme: dark) {\n",
+                "  :root[data-theme=\"nord\"]:not([data-scheme]) {\n",
+                "    --surface: #2e3440;\n",
+                "    --ink: #eceff4;\n",
+                "  }\n",
                 "}\n",
             )
         );
+    }
+
+    #[test]
+    fn a_one_variant_family_emits_nothing_for_the_other_side() {
+        let config = config(
+            r##"site:
+  themes:
+    - id: midnight
+      scheme: dark
+      colors:
+        surface: "#12141c"
+"##,
+        );
+        let midnight = config.themes.iter().next().expect("one family");
+        assert!(midnight.has(Scheme::Dark));
+        // The light side is the built-in base, which the stylesheet
+        // already carries — so the generated file says nothing about it.
+        assert!(!midnight.has(Scheme::Light));
+        assert_eq!(
+            config.themes.to_css(),
+            concat!(
+                "/* Generated by `okf site` from `.okf/config.yaml`. Do not edit:\n",
+                "   rebuild the site instead. Linked after the inline stylesheet, so\n",
+                "   these token overrides win the cascade. */\n",
+                "\n",
+                ":root[data-theme=\"midnight\"][data-scheme=\"dark\"] {\n",
+                "  --surface: #12141c;\n",
+                "}\n",
+                "\n",
+                "@media (prefers-color-scheme: dark) {\n",
+                "  :root[data-theme=\"midnight\"]:not([data-scheme]) {\n",
+                "    --surface: #12141c;\n",
+                "  }\n",
+                "}\n",
+            )
+        );
+    }
+
+    #[test]
+    fn an_entry_without_a_scheme_is_the_light_variant() {
+        let config = config(
+            "site:\n  themes:\n    - id: paper\n      colors:\n        surface: \"#fffdf7\"\n",
+        );
+        let paper = config.themes.iter().next().expect("one family");
+        assert!(paper.has(Scheme::Light));
+        assert!(!paper.has(Scheme::Dark));
+        // The label falls back to the id, which is what the picker shows.
+        assert_eq!(paper.label(), "paper");
+        let css = config.themes.to_css();
+        assert!(
+            css.contains(":root[data-theme=\"paper\"][data-scheme=\"light\"] {\n"),
+            "{css}"
+        );
+        assert!(
+            css.contains("@media (prefers-color-scheme: light) {\n"),
+            "{css}"
+        );
+        assert!(!css.contains("dark"), "{css}");
+    }
+
+    #[test]
+    fn the_default_family_selects_on_the_absence_of_data_theme() {
+        let config = config(
+            r##"site:
+  themes:
+    - id: default
+      colors:
+        surface: "#fffdf7"
+    - id: default
+      scheme: dark
+      colors:
+        surface: "#12141c"
+"##,
+        );
+        assert_eq!(config.themes.len(), 1);
+        assert_eq!(
+            config.themes.to_css(),
+            concat!(
+                "/* Generated by `okf site` from `.okf/config.yaml`. Do not edit:\n",
+                "   rebuild the site instead. Linked after the inline stylesheet, so\n",
+                "   these token overrides win the cascade. */\n",
+                "\n",
+                ":root:not([data-theme])[data-scheme=\"light\"] {\n",
+                "  --surface: #fffdf7;\n",
+                "}\n",
+                "\n",
+                "@media (prefers-color-scheme: light) {\n",
+                "  :root:not([data-theme]):not([data-scheme]) {\n",
+                "    --surface: #fffdf7;\n",
+                "  }\n",
+                "}\n",
+                "\n",
+                ":root:not([data-theme])[data-scheme=\"dark\"] {\n",
+                "  --surface: #12141c;\n",
+                "}\n",
+                "\n",
+                "@media (prefers-color-scheme: dark) {\n",
+                "  :root:not([data-theme]):not([data-scheme]) {\n",
+                "    --surface: #12141c;\n",
+                "  }\n",
+                "}\n",
+            )
+        );
+    }
+
+    #[test]
+    fn families_keep_first_appearance_order() {
+        let config = config(
+            "site:\n  themes:\n    \
+             - id: nord\n      scheme: dark\n    \
+             - id: paper\n    \
+             - id: nord\n      scheme: light\n    \
+             - id: midnight\n      scheme: dark\n",
+        );
+        // `nord` keeps the slot its first entry took, even though its
+        // second variant arrives after `paper`.
+        let ids: Vec<_> = config.themes.iter().map(Theme::id).collect();
+        assert_eq!(ids, ["nord", "paper", "midnight"]);
     }
 
     #[test]
@@ -1511,7 +1854,7 @@ mod tests {
         );
         assert!(
             config.themes.to_css().contains(
-                ":root[data-theme=\"nord\"] {\n  --surface: #2e3440;\n  \
+                ":root[data-theme=\"nord\"][data-scheme=\"dark\"] {\n  --surface: #2e3440;\n  \
                  --ink: #eceff4;\n  --danger: #bf616a;\n}\n"
             ),
             "{}",
@@ -1520,20 +1863,19 @@ mod tests {
     }
 
     #[test]
-    fn a_theme_may_declare_only_a_scheme() {
+    fn a_variant_may_declare_no_colors() {
         for text in [
             "site:\n  themes:\n    - id: nord\n      scheme: dark\n",
             "site:\n  themes:\n    - id: nord\n      scheme: dark\n      colors:\n",
         ] {
             let config = config(text);
-            let theme = config.themes.iter().next().expect("one theme");
+            let theme = config.themes.iter().next().expect("one family");
             assert_eq!(theme.id(), "nord");
-            // The label falls back to the id, which is what the picker shows.
             assert_eq!(theme.label(), "nord");
-            assert_eq!(theme.scheme(), Scheme::Dark);
+            // The variant exists — the picker offers it — but it overrides
+            // nothing, so it *is* the base palette and contributes no block.
+            assert!(theme.has(Scheme::Dark));
             assert!(!config.themes.is_empty());
-            // A theme that overrides nothing is the base palette its scheme
-            // already selects, so it contributes no block.
             let css = config.themes.to_css();
             assert!(css.starts_with("/* Generated by `okf site`"), "{css}");
             assert!(!css.contains("data-theme"), "{css}");
@@ -1547,7 +1889,7 @@ mod tests {
         assert!(error("site:\n  themes: {}\n").contains("`site.themes` must be a list"));
         assert!(
             error("site:\n  themes:\n    - nope\n")
-                .contains("`site.themes[0]` must be a mapping with `id` and `scheme`")
+                .contains("`site.themes[0]` must be a mapping with an `id`")
         );
         let err = error("site:\n  themes:\n    - id: nord\n      scheme: dark\n      colour: x\n");
         assert!(
@@ -1572,10 +1914,6 @@ mod tests {
                 .contains("`site.themes[0]` needs a string `id`")
         );
         assert!(
-            error("site:\n  themes:\n    - id: nord\n")
-                .contains("`site.themes[0]` needs a `scheme` of `light` or `dark`")
-        );
-        assert!(
             error("site:\n  themes:\n    - id: nord\n      scheme: blue\n")
                 .contains("`site.themes[0].scheme` must be `light` or `dark`")
         );
@@ -1583,6 +1921,43 @@ mod tests {
             error("site:\n  themes:\n    - id: nord\n      scheme: dark\n      label: \"  \"\n")
                 .contains("`site.themes[0].label` must not be empty")
         );
+    }
+
+    #[test]
+    fn a_family_takes_each_variant_once_and_carries_one_label() {
+        let err = error(
+            "site:\n  themes:\n    - id: nord\n      scheme: dark\n    \
+             - id: nord\n      scheme: dark\n",
+        );
+        assert!(err.contains("`site.themes[1]`"), "{err}");
+        assert!(
+            err.contains("theme `nord` already defines its `dark` variant"),
+            "{err}"
+        );
+        // The default scheme collides the same way an explicit one does.
+        let err = error("site:\n  themes:\n    - id: nord\n    - id: nord\n      scheme: light\n");
+        assert!(
+            err.contains("theme `nord` already defines its `light` variant"),
+            "{err}"
+        );
+
+        // One menu entry cannot show two labels.
+        let err = error(
+            "site:\n  themes:\n    - id: nord\n      label: Nord\n    \
+             - id: nord\n      scheme: dark\n      label: Nord Dark\n",
+        );
+        assert!(err.contains("`site.themes[1].label`"), "{err}");
+        assert!(err.contains("already labelled \"Nord\""), "{err}");
+        // Repeating the same label is not a disagreement, and a label given
+        // on the second entry alone still reaches the family.
+        let config = config(
+            "site:\n  themes:\n    - id: nord\n      label: Nord\n    \
+             - id: nord\n      scheme: dark\n      label: Nord\n    \
+             - id: paper\n    \
+             - id: paper\n      scheme: dark\n      label: Paper\n",
+        );
+        let labels: Vec<_> = config.themes.iter().map(Theme::label).collect();
+        assert_eq!(labels, ["Nord", "Paper"]);
     }
 
     #[test]
@@ -1620,15 +1995,21 @@ mod tests {
             .next()
             .is_some()
         );
-        let err = bad("auto");
-        assert!(err.contains("`auto` is reserved"), "{err}");
-
-        let err = error(
-            "site:\n  themes:\n    - id: nord\n      scheme: dark\n    \
-             - id: nord\n      scheme: light\n",
+        // The appearance names are not theme ids: they are the other axis.
+        for id in RESERVED_THEME_IDS {
+            let err = bad(id);
+            assert!(err.contains(&format!("`{id}` is reserved")), "{err}");
+            assert!(err.contains("`scheme:` key"), "{err}");
+        }
+        // `default` is not reserved — it restyles the built-in family.
+        assert_eq!(
+            config("site:\n  themes:\n    - id: default\n      scheme: dark\n")
+                .themes
+                .iter()
+                .next()
+                .map(Theme::id),
+            Some(DEFAULT_THEME_ID)
         );
-        assert!(err.contains("`site.themes[1]`"), "{err}");
-        assert!(err.contains("duplicate theme id `nord`"), "{err}");
     }
 
     #[test]
@@ -1704,20 +2085,49 @@ mod tests {
     }
 
     #[test]
-    fn the_default_theme_is_an_id_or_auto() {
-        assert_eq!(
-            config("site:\n  theme: auto\n").theme.as_deref(),
-            Some("auto")
-        );
-        let config = config(
-            "site:\n  title: Docs\n  theme: nord\n  themes:\n    \
+    fn the_theme_and_the_scheme_are_separate_settings() {
+        let pinned = config(
+            "site:\n  title: Docs\n  theme: nord\n  scheme: dark\n  themes:\n    \
              - id: nord\n      scheme: dark\n",
         );
-        assert_eq!(config.theme.as_deref(), Some("nord"));
-        // `theme` and `themes` report after the existing four settings.
-        assert_eq!(config.settings(), ["title", "theme", "themes"]);
+        assert_eq!(pinned.theme.as_deref(), Some("nord"));
+        assert_eq!(pinned.scheme, Some(SchemePref::Dark));
+        // `theme`, `scheme`, and `themes` report after the font settings.
+        assert_eq!(pinned.settings(), ["title", "theme", "scheme", "themes"]);
+
+        // The built-in family is a nameable theme; the appearances are not.
+        assert_eq!(
+            config("site:\n  theme: default\n").theme.as_deref(),
+            Some(DEFAULT_THEME_ID)
+        );
+        for name in RESERVED_THEME_IDS {
+            let err = error(&format!("site:\n  theme: {name}\n"));
+            assert!(err.contains("names an appearance, not a theme"), "{err}");
+            assert!(err.contains(&format!("`site.scheme: {name}`")), "{err}");
+        }
         assert!(error("site:\n  theme: Nord\n").contains("`site.theme`"));
         assert!(error("site:\n  theme: \"  \"\n").contains("`site.theme` must not be empty"));
         assert!(error("site:\n  theme: [nord]\n").contains("`site.theme` must be a string"));
+
+        // All three appearances parse, and nothing else does.
+        for (text, want) in [
+            ("auto", SchemePref::Auto),
+            ("light", SchemePref::Light),
+            ("dark", SchemePref::Dark),
+        ] {
+            let config = config(&format!("site:\n  scheme: {text}\n"));
+            assert_eq!(config.scheme, Some(want));
+            assert_eq!(want.as_str(), text);
+            assert_eq!(config.settings(), ["scheme"]);
+        }
+        assert_eq!(SchemePref::Auto.scheme(), None);
+        assert_eq!(SchemePref::Light.scheme(), Some(Scheme::Light));
+        assert_eq!(SchemePref::Dark.scheme(), Some(Scheme::Dark));
+        // An absent key is not a preference: the build supplies the default.
+        assert_eq!(config("site:\n  title: Docs\n").scheme, None);
+        assert!(
+            error("site:\n  scheme: sepia\n")
+                .contains("`site.scheme` must be one of: auto, light, dark")
+        );
     }
 }

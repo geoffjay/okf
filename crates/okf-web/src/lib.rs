@@ -13,6 +13,7 @@
 //!     today: None,
 //!     title: None,
 //!     theme: None,
+//!     scheme: None,
 //! })?;
 //! # Ok::<(), okf_web::SiteError>(())
 //! ```
@@ -85,7 +86,7 @@ pub mod markdown;
 pub mod render;
 pub mod search;
 
-use config::{Fonts, SiteConfig, Themes};
+use config::{Fonts, Scheme, SchemePref, SiteConfig, Themes};
 use okf_core::{Bundle, BundleError, ConceptId, Date};
 use render::{BUILTIN_THEMES, SiteChrome, SitePage, ThemeEntry, write_page};
 use std::fs;
@@ -113,11 +114,15 @@ pub struct SiteOptions {
     /// `site.title` (see [`config::SiteConfig`]), then to
     /// [`DEFAULT_SITE_TITLE`].
     pub title: Option<String>,
-    /// The theme a first-time visitor sees, by id. `None` falls back to the
-    /// bundle's `site.theme`, then to [`config::AUTO_THEME_ID`] — following
-    /// the system light/dark preference. An id the site's catalog does not
-    /// define is an error, not a silent fallback.
+    /// The theme family a first-time visitor sees, by id. `None` falls back
+    /// to the bundle's `site.theme`, then to [`config::DEFAULT_THEME_ID`].
+    /// An id the site's catalog does not define is an error, not a silent
+    /// fallback.
     pub theme: Option<String>,
+    /// The appearance a first-time visitor sees. `None` falls back to the
+    /// bundle's `site.scheme`, then to [`config::SchemePref::Auto`] — the
+    /// system preference.
+    pub scheme: Option<SchemePref>,
 }
 
 /// The site title used when [`SiteOptions::title`] is `None`.
@@ -181,6 +186,7 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         out_dir,
         title,
         theme,
+        scheme,
         ..
     } = options;
     let config = SiteConfig::load(&root)?;
@@ -194,11 +200,12 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     let fonts = config.fonts;
     let themes = config.themes;
     let catalog = theme_catalog(&themes);
-    // Same precedence for the theme, with one difference: an id nothing
-    // defines is an error rather than a fallback, because a default theme
-    // that silently does nothing is exactly the CI-hostile case the config
-    // is strict about.
+    // The same precedence for both theme axes, with one difference: a
+    // family nothing defines is an error rather than a fallback, because a
+    // default that silently does nothing is exactly the CI-hostile case the
+    // config is strict about.
     let default_theme = resolve_default_theme(&root, theme, config.theme, &catalog)?;
+    let default_scheme = scheme.or(config.scheme).unwrap_or(SchemePref::Auto);
     let bundle = Bundle::load(&root)?;
 
     // Health badges from the same calls the studio snapshot makes.
@@ -249,6 +256,7 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
         has_theme_css: !themes.is_empty(),
         themes: &catalog,
         default_theme: &default_theme,
+        default_scheme,
     };
 
     fs::create_dir_all(&out_dir).map_err(|e| SiteError::Io(e, out_dir.clone()))?;
@@ -301,31 +309,38 @@ pub fn generate(options: SiteOptions) -> Result<SiteSummary, SiteError> {
     })
 }
 
-/// The site's theme catalog: the built-in palettes, then the bundle's own.
+/// The site's theme catalog: the built-in families, then the bundle's own.
 ///
-/// A bundle theme whose id matches a built-in is *not* a second menu entry:
-/// its `[data-theme]` block lands in `assets/theme.css`, which is linked
-/// after the inline stylesheet, so it overrides that palette's tokens and
-/// the entry keeps its built-in label and scheme. That is the cascade doing
-/// the work, and it is the natural way to say "keep the standard themes,
-/// restyle them".
+/// A bundle family whose id matches a built-in is *not* a second menu
+/// entry: its variants land in `assets/theme.css`, which is linked after
+/// the inline stylesheet, so they override that family's tokens while the
+/// entry keeps its built-in label. The catalog entry then advertises the
+/// union of the two — a bundle that adds a dark `sepia` makes the built-in
+/// light-only family cover both appearances. That is the cascade doing the
+/// work, and it is how a bundle says "keep the standard themes, restyle
+/// them" or "finish the variant I want".
 fn theme_catalog(themes: &Themes) -> Vec<ThemeEntry<'_>> {
     let mut catalog: Vec<ThemeEntry<'_>> = BUILTIN_THEMES.to_vec();
     for theme in themes {
-        if catalog.iter().any(|entry| entry.id == theme.id()) {
+        let light = theme.has(Scheme::Light);
+        let dark = theme.has(Scheme::Dark);
+        if let Some(entry) = catalog.iter_mut().find(|entry| entry.id == theme.id()) {
+            entry.light |= light;
+            entry.dark |= dark;
             continue;
         }
         catalog.push(ThemeEntry {
             id: theme.id(),
             label: theme.label(),
-            scheme: Some(theme.scheme()),
+            light,
+            dark,
         });
     }
     catalog
 }
 
-/// Resolves the theme a first visit gets: the caller's `--theme` over the
-/// bundle's `site.theme` over [`config::AUTO_THEME_ID`].
+/// Resolves the theme family a first visit gets: the caller's `--theme`
+/// over the bundle's `site.theme` over [`config::DEFAULT_THEME_ID`].
 ///
 /// An id outside the catalog fails the build, and the two sources report
 /// differently on purpose: a bad `site.theme` is a configuration error
@@ -346,7 +361,7 @@ fn resolve_default_theme(
     let (id, from_caller) = match (requested, configured) {
         (Some(id), _) => (id, true),
         (None, Some(id)) => (id, false),
-        (None, None) => return Ok(config::AUTO_THEME_ID.to_string()),
+        (None, None) => return Ok(config::DEFAULT_THEME_ID.to_string()),
     };
     if catalog.iter().any(|entry| entry.id == id) {
         return Ok(id);

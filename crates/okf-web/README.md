@@ -8,7 +8,7 @@ is the deployable one: a build-time pipeline that turns a bundle into a
 directory of HTML — no server, no WASM, no client-side framework.
 
 ```text
-okf site [bundle]   # --today, --out DIR, --title, --theme; writes <bundle>/site by default
+okf site [bundle]   # --today, --out DIR, --title, --theme, --scheme; writes <bundle>/site
 ```
 
 What it emits:
@@ -34,8 +34,9 @@ What it emits:
   gracefully. Every block — fenced or indented, highlighted or not — renders
   inside the same bordered, padded card a diagram gets, on the code surface
   token.
-- A theme menu in the header: `auto`, `light`, `dark`, `sepia`, `contrast`,
-  plus the bundle's own palettes. See below.
+- A theme menu in the header with two axes: an appearance (`auto`, `light`,
+  `dark`) and a theme family (`default`, `sepia`, `contrast`, plus the
+  bundle's own). See below.
 - Frontmatter panels with trust/status/staleness badges, backlinks, sources
   with OKF footnote→source attribution, headings TOC, and validator/lint
   findings — everything the studio Explorer inspector shows.
@@ -47,21 +48,28 @@ What it emits:
   themes — see below — linked after the inline stylesheet so their token
   overrides win.
 
-Themes are values, not rules, which is why they switch at runtime against an
-ahead-of-time stylesheet: every color resolves through a `:root` custom
-property. Two attributes carry the choice on `<html>`, applied from
-`localStorage` (`okf-theme`) before first paint so a reload never flashes:
+Themes are values, not rules, which is why they switch at runtime against
+an ahead-of-time stylesheet: every color resolves through a `:root` custom
+property. Two independent attributes carry the choice on `<html>`, applied
+from `localStorage` (`okf-scheme`, `okf-theme`) before first paint so a
+reload never flashes:
 
-- `data-scheme` — `light` or `dark`, absent to follow the system. It selects
-  the base palette and everything else on that axis: `color-scheme`, which
-  shiki variable resolves, which mermaid mode renders, which glyph the theme
-  button shows.
-- `data-theme` — a palette id layering token overrides on the base. Absent
-  means the scheme's own palette.
+- `data-scheme` — `light` or `dark`, absent to follow the system. It is the
+  appearance: the base palette, `color-scheme`, which shiki variable
+  resolves, which mermaid mode renders, which glyph the theme button shows.
+- `data-theme` — a *family* id whose variant for the current appearance
+  layers on top. Absent means the built-in `default` family.
 
-With neither attribute the page is exactly what it was before themes existed:
-a light stylesheet with a `prefers-color-scheme: dark` override, which is
-also what a visitor with no JavaScript gets.
+A family holds up to two variants, so flipping the appearance switches
+between a theme's light and dark forms. A variant a family does not define
+is absent from the stylesheet, so that appearance falls through to the base
+palette — `sepia` is light-only, and the menu says so rather than leaving
+the fallback to be discovered.
+
+With neither attribute the page is exactly what it was before themes
+existed: a light stylesheet with a `prefers-color-scheme: dark` override.
+A bundle that pins a theme gets the attribute rendered into the markup, so
+that reaches a reader with no JavaScript too.
 
 Per-bundle configuration: a bundle may pin its site settings in
 `.okf/config.yaml`, read by `okf_web::config::SiteConfig` with okf-core's
@@ -72,15 +80,21 @@ walker, so configuration never becomes content.
 site:
   title: "Travel knowledge"      # `okf site --title` overrides this
   theme: nord                    # first-visit theme; `okf site --theme` overrides it
-  themes:
+  scheme: auto                   # first-visit appearance; `--scheme` overrides it
+  themes:                        # one entry per variant, merged by id
     - id: nord                   # [a-z][a-z0-9-]{0,31}; may take a built-in id
       label: "Nord"              # menu text; defaults to the id
-      scheme: dark               # required: base palette, code colors, diagrams
+      scheme: dark               # optional, defaults to light
       colors:                    # closed token set; every key optional
         surface: "#2e3440"
         ink: "#eceff4"
         edge: "#4c566a"
         link: "#88c0d0"
+    - id: nord                   # same id = this family's other variant
+      scheme: light
+      colors:
+        surface: "#eceff4"
+        ink: "#2e3440"
   fonts:
     body: "Newsreader, Georgia, serif"
     code: "JetBrains Mono, ui-monospace, monospace"
@@ -96,23 +110,29 @@ properties and palettes through the nineteen color tokens
 generated stylesheet — `site.css` stays universal and no bundle needs a
 Tailwind recompile. Faces are copied to `assets/fonts/` and described with
 `@font-face` (stylesheet-relative `url()`, so one href works at every page
-depth and over `file://`); palettes become `:root[data-theme="…"]` blocks in
-`assets/theme.css`, which is linked last so it wins the cascade tie. A
-palette overrides only what it names — its `scheme` block seeds the rest —
-and a palette that takes a built-in id restyles that theme rather than adding
-a second menu entry. Mermaid reads the body font and the palette tokens, so
+depth and over `file://`); variants become
+`:root[data-theme="…"][data-scheme="…"]` blocks in `assets/theme.css`
+(each with a `prefers-color-scheme` twin for the attribute-less `auto`
+case), linked last so they win the cascade tie. A variant overrides only
+what it names — the appearance's base palette seeds the rest — and a family
+that takes a built-in id restyles that theme rather than adding a second
+menu entry, including supplying a variant the built-in lacks. `auto`,
+`light`, and `dark` are reserved ids: they name appearances, so they belong
+in `scheme:`. Mermaid reads the body font and the palette tokens, so
 diagrams follow both.
 
 A bundle with no `.okf/` writes neither generated stylesheet. Content stays
 permissive, configuration is strict: unknown keys, bad values, missing font
-files, and a `theme:` naming a theme nothing defines fail the build, while an
-unknown top-level section is only reported (`SiteSummary::notes`).
-`SiteSummary` also names the file the build read (`config`) and the settings
-it supplied (`config_settings`), which is what separates a configuration that
-took effect from one the build never saw. CSS is constructed rather than
-interpolated — quoted family segments, closed vocabularies for weight/style
-and for color syntax, flat ASCII file names and theme ids — so no configured
-string can inject CSS or escape `.okf/fonts/`.
+files, a duplicate `(id, scheme)` variant, conflicting labels for one
+family, and a `theme:` naming a theme nothing defines all fail the build,
+while an unknown top-level section is only reported
+(`SiteSummary::notes`). `SiteSummary` also names the file the build read
+(`config`) and the settings it supplied (`config_settings`), which is what
+separates a configuration that took effect from one the build never saw.
+CSS is constructed rather than interpolated — quoted family segments,
+closed vocabularies for weight/style and for color syntax, flat ASCII file
+names and theme ids — so no configured string can inject CSS or escape
+`.okf/fonts/`.
 
 Family lists name families the *viewer's* browser resolves; a family that is
 neither installed there nor listed under `files:` falls back to the next

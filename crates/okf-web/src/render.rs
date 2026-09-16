@@ -6,7 +6,7 @@
 //! our own vendored-mermaid `<script>` block.
 
 use crate::PagePath;
-use crate::config::{self, Scheme};
+use crate::config::{self, Scheme, SchemePref};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use okf_core::{Bundle, Concept, ConceptId, Date, Status, TrustTier};
 use okf_validator::{Diagnostic, Report, Severity};
@@ -89,56 +89,73 @@ const SITE_CSS: &str = include_str!("../assets/site.css");
 // (The mermaid bootstrap lives in `mermaid_boot`, emitted per page with a
 // depth-correct asset path; no module-level constant.)
 
-/// One entry in the site's theme catalog: a palette the header menu offers.
+/// One entry in the site's theme catalog: a *family*, offered once in the
+/// header menu and rendered in whichever variant the appearance calls for.
 ///
 /// The catalog is the built-in table below plus whatever the bundle defines
-/// in `.okf/config.yaml`, merged by [`crate::generate`]. An entry is the
-/// only place the two `<html>` attributes come from: `id` becomes
-/// `data-theme` and `scheme` becomes `data-scheme`, except for
-/// [`config::AUTO_THEME_ID`], which sets neither and so leaves the page on
-/// the stylesheet's `prefers-color-scheme` default.
+/// in `.okf/config.yaml`, merged by [`crate::generate`]. The id becomes
+/// `data-theme` on `<html>` — except [`config::DEFAULT_THEME_ID`], which is
+/// the *absence* of the attribute — and the appearance is the independent
+/// `data-scheme` axis. A family that defines only one variant leaves the
+/// other appearance on the built-in base palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThemeEntry<'a> {
     /// The `data-theme` value, and the string persisted under `okf-theme`.
     pub id: &'a str,
     /// The menu label. Escaped like every other interpolation.
     pub label: &'a str,
-    /// The light/dark axis the palette sits on, or `None` for `auto`.
-    pub scheme: Option<Scheme>,
+    /// Whether the family carries a light variant.
+    pub light: bool,
+    /// Whether the family carries a dark variant.
+    pub dark: bool,
 }
 
-/// The palettes compiled into [`SITE_CSS`], in menu order.
+impl ThemeEntry<'_> {
+    /// Whether the family covers `scheme` itself rather than falling
+    /// through to the base palette.
+    #[must_use]
+    pub const fn has(&self, scheme: Scheme) -> bool {
+        match scheme {
+            Scheme::Light => self.light,
+            Scheme::Dark => self.dark,
+        }
+    }
+}
+
+/// The families compiled into [`SITE_CSS`], in menu order.
 ///
-/// Every id here except `auto` has a `[data-theme="<id>"]` block in
-/// `assets/tailwind.css`; `builtin_themes_have_css_blocks` holds that pair
-/// together, because a table entry whose palette was deleted would render a
-/// menu item that silently does nothing.
-pub const BUILTIN_THEMES: [ThemeEntry<'static>; 5] = [
+/// `default` is the base palette itself — the `:root` and `[data-scheme]`
+/// blocks — so it has no `[data-theme]` block; every other variant here
+/// does, and `builtin_themes_have_css_blocks` holds the table and the
+/// stylesheet together, because an entry whose palette was deleted would
+/// render a menu item that silently does nothing.
+pub const BUILTIN_THEMES: [ThemeEntry<'static>; 3] = [
     ThemeEntry {
-        id: config::AUTO_THEME_ID,
-        label: "Auto (system)",
-        scheme: None,
-    },
-    ThemeEntry {
-        id: "light",
-        label: "Light",
-        scheme: Some(Scheme::Light),
-    },
-    ThemeEntry {
-        id: "dark",
-        label: "Dark",
-        scheme: Some(Scheme::Dark),
+        id: config::DEFAULT_THEME_ID,
+        label: "Default",
+        light: true,
+        dark: true,
     },
     ThemeEntry {
         id: "sepia",
         label: "Sepia",
-        scheme: Some(Scheme::Light),
+        light: true,
+        dark: false,
     },
     ThemeEntry {
         id: "contrast",
         label: "High contrast",
-        scheme: Some(Scheme::Dark),
+        light: true,
+        dark: true,
     },
+];
+
+/// The appearance choices the menu offers, in menu order. `Auto` sets no
+/// attribute, leaving the stylesheet's `prefers-color-scheme` rules.
+const SCHEME_CHOICES: [(SchemePref, &str); 3] = [
+    (SchemePref::Auto, "Auto (system)"),
+    (SchemePref::Light, "Light"),
+    (SchemePref::Dark, "Dark"),
 ];
 
 /// The build-wide chrome every page shares: values that come from the site
@@ -154,12 +171,14 @@ pub struct SiteChrome<'a> {
     /// inline stylesheet, so its `:root` token overrides win the cascade tie.
     pub has_fonts: bool,
     /// Whether this build wrote `assets/theme.css` — the bundle's own
-    /// palettes, linked after `fonts.css` for the same reason.
+    /// families, linked after `fonts.css` for the same reason.
     pub has_theme_css: bool,
     /// The catalog the header menu offers, built-ins first.
     pub themes: &'a [ThemeEntry<'a>],
-    /// The theme a visitor with no stored choice gets; an id from `themes`.
+    /// The family a visitor with no stored choice gets; an id from `themes`.
     pub default_theme: &'a str,
+    /// The appearance a visitor with no stored choice gets.
+    pub default_scheme: SchemePref,
 }
 
 /// Writes one page into the output tree.
@@ -198,9 +217,16 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
     let current_rel = rel_path.rel();
     let wants_mermaid = *has_mermaid && chrome.has_mermaid;
     let wants_shiki = *has_shiki;
+    // The build's own defaults, rendered into the markup rather than left to
+    // the boot: a reader without JavaScript still gets the bundle's pinned
+    // theme, and the boot only has to *change* attributes when a stored
+    // choice differs. `default`/`auto` are the absence of their attribute.
+    let pinned_theme =
+        (chrome.default_theme != config::DEFAULT_THEME_ID).then_some(chrome.default_theme);
+    let pinned_scheme = chrome.default_scheme.scheme().map(Scheme::as_css);
     html! {
         (DOCTYPE)
-        html lang="en" {
+        html lang="en" data-theme=[pinned_theme] data-scheme=[pinned_scheme] {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
@@ -208,7 +234,13 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
                 // Pre-render theme application: reads localStorage before
                 // first paint to avoid a flash of the wrong theme. Our own
                 // trusted inline script, like mermaid_boot.
-                script { (PreEscaped(theme_boot(chrome.themes, chrome.default_theme))) }
+                script {
+                    (PreEscaped(theme_boot(
+                        chrome.themes,
+                        chrome.default_theme,
+                        chrome.default_scheme,
+                    )))
+                }
                 // PreEscaped: SITE_CSS is trusted compile-time content; maud's
                 // default escaping would turn `>` combinators and quoted
                 // font-family names into `&gt;`/`&quot;` and break the rules.
@@ -247,7 +279,7 @@ fn layout(page: &SitePage, bundle: &Bundle, chrome: SiteChrome<'_>) -> Markup {
                             data-asset=(format!("{prefix}assets/search-index.js"))
                             data-prefix=(prefix) {}
                     }
-                    (theme_picker(chrome.themes, chrome.default_theme))
+                    (theme_picker(chrome.themes, chrome.default_theme, chrome.default_scheme))
                 }
                 div class="layout" {
                     nav id="site-nav" class="tree" aria-label="bundle contents" {
@@ -303,16 +335,24 @@ stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
 width=\"20\" height=\"20\" aria-hidden=\"true\">\
 <path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>";
 
-/// The header's theme control: the resolved-scheme glyph, and the catalog
-/// behind it as a menu.
+/// The header's theme control: the resolved-appearance glyph, and behind it
+/// a menu with one radio group per axis — appearance, then theme family.
 ///
 /// `aria-checked` is the selection state — the stylesheet draws the tick
-/// from it — and the items carry the two attribute values the menu boot
+/// from it — and the items carry the attribute values the menu boot
 /// applies, so the page needs no second copy of the catalog in script form.
-/// A page is served with the build default checked; [`THEME_MENU_BOOT`]
-/// re-marks it from `localStorage` on load, the same value the pre-paint
+/// A page is served with the build defaults checked; [`THEME_MENU_BOOT`]
+/// re-marks them from `localStorage` on load, the same values the pre-paint
 /// boot already applied to `<html>`.
-fn theme_picker(themes: &[ThemeEntry<'_>], default_theme: &str) -> Markup {
+///
+/// A family with one variant says so next to its name, because the
+/// fallback is otherwise invisible: choosing `sepia` and then switching to
+/// dark lands on the base dark palette by design, not by failure.
+fn theme_picker(
+    themes: &[ThemeEntry<'_>],
+    default_theme: &str,
+    default_scheme: SchemePref,
+) -> Markup {
     html! {
         div class="theme-picker" {
             button id="theme-btn" class="theme-btn" type="button" title="Theme"
@@ -322,21 +362,46 @@ fn theme_picker(themes: &[ThemeEntry<'_>], default_theme: &str) -> Markup {
                 span class="icon-sun" { (PreEscaped(SUN_ICON)) }
                 span class="icon-moon" { (PreEscaped(MOON_ICON)) }
             }
-            ul class="theme-menu" role="menu" aria-labelledby="theme-btn"
-                data-default=(default_theme) hidden {
-                @for theme in themes {
-                    li role="none" {
-                        button class="theme-item" type="button" role="menuitemradio"
-                            data-theme-id=(theme.id)
-                            data-theme-scheme=[theme.scheme.map(Scheme::as_css)]
-                            aria-checked=(if theme.id == default_theme { "true" } else { "false" }) {
-                            (theme.label)
+            div class="theme-menu" role="menu" aria-labelledby="theme-btn"
+                data-default-theme=(default_theme)
+                data-default-scheme=(default_scheme.as_str()) hidden {
+                p class="theme-group" id="theme-group-scheme" { "Appearance" }
+                ul role="group" aria-labelledby="theme-group-scheme" {
+                    @for (scheme, label) in SCHEME_CHOICES {
+                        li role="none" {
+                            button class="theme-item" type="button" role="menuitemradio"
+                                data-scheme-id=(scheme.as_str())
+                                aria-checked=(checked(scheme == default_scheme)) {
+                                (label)
+                            }
+                        }
+                    }
+                }
+                p class="theme-group" id="theme-group-theme" { "Theme" }
+                ul role="group" aria-labelledby="theme-group-theme" {
+                    @for theme in themes {
+                        li role="none" {
+                            button class="theme-item" type="button" role="menuitemradio"
+                                data-theme-id=(theme.id)
+                                aria-checked=(checked(theme.id == default_theme)) {
+                                (theme.label)
+                                @if theme.light != theme.dark {
+                                    span class="theme-variant" {
+                                        (if theme.light { "light only" } else { "dark only" })
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+/// The `aria-checked` value for a radio item.
+const fn checked(is_checked: bool) -> &'static str {
+    if is_checked { "true" } else { "false" }
 }
 
 /// `true` for an id safe to write into a JavaScript string literal and a CSS
@@ -350,18 +415,24 @@ fn is_safe_id(id: &str) -> bool {
 
 /// Applies stored site state before first paint, so nothing flashes.
 ///
-/// Three keys, read synchronously in `<head>`: the theme (`okf-theme`,
-/// applied as `data-theme`/`data-scheme` on `<html>`), the collapsed nav
-/// (`okf-nav`), and the closed nav submenus (`okf-nav-closed`). Keys absent
-/// or unavailable leave the attributes off and every submenu expanded, so
-/// the system color scheme and the fully expanded nav are the defaults.
+/// Four keys, read synchronously in `<head>`: the theme family
+/// (`okf-theme`) and the appearance (`okf-scheme`), applied as
+/// `data-theme`/`data-scheme` on `<html>`, plus the collapsed nav
+/// (`okf-nav`) and the closed nav submenus (`okf-nav-closed`). The markup
+/// already carries the build's pinned defaults, so this script only has to
+/// *change* the attributes when a stored choice differs — including
+/// removing them, which is what `default` and `auto` mean.
 ///
-/// The catalog is inlined as an id-to-scheme map because `<head>` runs
-/// before the menu exists. It doubles as the allowlist: a stored id this
-/// build does not define falls back to the build default rather than
-/// leaving `<html>` carrying a `data-theme` no block matches — which would
-/// drop a dark-preferring visitor onto the light base. Ids outside
+/// The catalog is inlined as a family-id set because `<head>` runs before
+/// the menu exists. It doubles as the allowlist: a stored id this build
+/// does not define falls back to the build default rather than leaving
+/// `<html>` carrying a `data-theme` no block matches. Ids outside
 /// `[a-z0-9-]` are skipped, so the emitted literal cannot be escaped.
+///
+/// One migration lives here. Before themes had variants, `okf-theme` held
+/// `light`/`dark` — an appearance, not a family — so a stored value that
+/// names an appearance is read as one. Those ids are reserved against
+/// bundle themes precisely so this stays unambiguous.
 ///
 /// The submenu state cannot be an attribute or class here — the nav does
 /// not exist yet — so it is applied as an injected stylesheet keyed on
@@ -371,29 +442,31 @@ fn is_safe_id(id: &str) -> bool {
 /// `CSS.escape` (an unquoted attribute value is an identifier), so a
 /// hand-written key cannot inject rules.
 #[must_use]
-pub fn theme_boot(themes: &[ThemeEntry<'_>], default_theme: &str) -> String {
-    let mut schemes = String::from("{");
+pub fn theme_boot(
+    themes: &[ThemeEntry<'_>],
+    default_theme: &str,
+    default_scheme: SchemePref,
+) -> String {
+    let mut families = String::from("{");
     for theme in themes.iter().filter(|theme| is_safe_id(theme.id)) {
-        if let Some(scheme) = theme.scheme {
-            if schemes.len() > 1 {
-                schemes.push(',');
-            }
-            let _ = write!(schemes, "'{}':'{}'", theme.id, scheme.as_css());
+        if families.len() > 1 {
+            families.push(',');
         }
+        let _ = write!(families, "'{}':1", theme.id);
     }
-    schemes.push('}');
+    families.push('}');
     let default_theme = if is_safe_id(default_theme) {
         default_theme
     } else {
-        config::AUTO_THEME_ID
+        config::DEFAULT_THEME_ID
     };
-    let mut js = String::with_capacity(THEME_BOOT_BODY.len() + schemes.len() + 64);
-    js.push_str("(function () {  var S = ");
-    js.push_str(&schemes);
-    js.push_str(", A = '");
-    js.push_str(config::AUTO_THEME_ID);
-    js.push_str("', D = '");
+    let mut js = String::with_capacity(THEME_BOOT_BODY.len() + families.len() + 80);
+    js.push_str("(function () {  var F = ");
+    js.push_str(&families);
+    js.push_str(", DT = '");
     js.push_str(default_theme);
+    js.push_str("', DS = '");
+    js.push_str(default_scheme.as_str());
     js.push_str("';");
     js.push_str(THEME_BOOT_BODY);
     js
@@ -403,15 +476,18 @@ pub fn theme_boot(themes: &[ThemeEntry<'_>], default_theme: &str) -> String {
 /// with.
 const THEME_BOOT_BODY: &str = "\
   var root = document.documentElement;\
-  var choice = D;\
+  var theme = DT, scheme = DS;\
   try {\
     var t = localStorage.getItem('okf-theme');\
-    if (t === A || (t && Object.prototype.hasOwnProperty.call(S, t))) choice = t;\
-  } catch (e) { /* no localStorage (e.g. privacy mode): the build default */ }\
-  if (choice !== A && Object.prototype.hasOwnProperty.call(S, choice)) {\
-    root.setAttribute('data-theme', choice);\
-    root.setAttribute('data-scheme', S[choice]);\
-  }\
+    var s = localStorage.getItem('okf-scheme');\
+    if (!s && (t === 'light' || t === 'dark')) { s = t; t = null; }\
+    if (t && Object.prototype.hasOwnProperty.call(F, t)) theme = t;\
+    if (s === 'auto' || s === 'light' || s === 'dark') scheme = s;\
+  } catch (e) { /* no localStorage (e.g. privacy mode): the build defaults */ }\
+  if (theme && theme !== 'default') root.setAttribute('data-theme', theme);\
+  else root.removeAttribute('data-theme');\
+  if (scheme === 'light' || scheme === 'dark') root.setAttribute('data-scheme', scheme);\
+  else root.removeAttribute('data-scheme');\
   try {\
     if (localStorage.getItem('okf-nav') === 'collapsed') {\
       root.classList.add('nav-hidden');\
@@ -434,15 +510,18 @@ const THEME_BOOT_BODY: &str = "\
 })()";
 
 /// Wires the header's theme menu: opens and closes it, applies a chosen
-/// palette to `<html>`, persists the choice, and keeps `aria-checked`
-/// accurate.
+/// family or appearance to `<html>`, persists it, and keeps `aria-checked`
+/// accurate on both groups.
 ///
-/// Everything it needs is already in the DOM — each item carries its id and
-/// its scheme, the menu carries the build default — so this script is the
-/// same bytes on every page. `okf-theme` is keyed rather than namespaced per
-/// site, so several okf sites on one origin share the choice; the `storage`
-/// listener makes that visible live in an already-open tab instead of only
-/// on its next load.
+/// Everything it needs is already in the DOM — each item carries the axis
+/// it belongs to and its value, the menu carries the build defaults — so
+/// this script is the same bytes on every page. The two axes are
+/// independent: changing appearance keeps the chosen family and simply
+/// renders its other variant, or the base palette when it has none.
+///
+/// The keys are not namespaced per site, so several okf sites on one origin
+/// share the reader's choices; the `storage` listener makes that visible
+/// live in an already-open tab instead of only on its next load.
 const THEME_MENU_BOOT: &str = "\
 (function () {\
   var root = document.documentElement;\
@@ -453,36 +532,54 @@ const THEME_MENU_BOOT: &str = "\
   if (!btn || !menu) return;\
   var items = Array.prototype.slice.call(menu.querySelectorAll('.theme-item'));\
   if (!items.length) return;\
-  var fallback = menu.getAttribute('data-default');\
-  var item = function (id) {\
-    for (var i = 0; i < items.length; i++) {\
-      if (items[i].getAttribute('data-theme-id') === id) return items[i];\
+  var axes = {\
+    theme: {\
+      attr: 'data-theme-id',\
+      key: 'okf-theme',\
+      bare: 'default',\
+      fallback: menu.getAttribute('data-default-theme')\
+    },\
+    scheme: {\
+      attr: 'data-scheme-id',\
+      key: 'okf-scheme',\
+      bare: 'auto',\
+      fallback: menu.getAttribute('data-default-scheme')\
     }\
-    return null;\
   };\
-  var mark = function (id) {\
-    for (var i = 0; i < items.length; i++) {\
-      items[i].setAttribute('aria-checked',\
-        items[i].getAttribute('data-theme-id') === id ? 'true' : 'false');\
-    }\
+  var group = function (axis) {\
+    return items.filter(function (entry) { return entry.hasAttribute(axis.attr); });\
   };\
-  var apply = function (id, persist) {\
-    var chosen = item(id) || item(fallback) || items[0];\
-    var value = chosen.getAttribute('data-theme-id');\
-    var scheme = chosen.getAttribute('data-theme-scheme');\
-    if (scheme) {\
-      root.setAttribute('data-theme', value);\
-      root.setAttribute('data-scheme', scheme);\
-    } else {\
-      root.removeAttribute('data-theme');\
-      root.removeAttribute('data-scheme');\
-    }\
-    mark(value);\
+  var item = function (axis, value) {\
+    var found = group(axis).filter(function (entry) {\
+      return entry.getAttribute(axis.attr) === value;\
+    });\
+    return found.length ? found[0] : null;\
+  };\
+  var mark = function (axis, value) {\
+    group(axis).forEach(function (entry) {\
+      entry.setAttribute('aria-checked',\
+        entry.getAttribute(axis.attr) === value ? 'true' : 'false');\
+    });\
+  };\
+  var stored = function (key) {\
+    try { return localStorage.getItem(key); } catch (e) { return null; }\
+  };\
+  var apply = function (axis, value, persist) {\
+    var chosen = item(axis, value) || item(axis, axis.fallback) || group(axis)[0];\
+    if (!chosen) return;\
+    var picked = chosen.getAttribute(axis.attr);\
+    var attribute = axis.attr === 'data-theme-id' ? 'data-theme' : 'data-scheme';\
+    if (picked === axis.bare) root.removeAttribute(attribute);\
+    else root.setAttribute(attribute, picked);\
+    mark(axis, picked);\
     if (persist) {\
-      try { localStorage.setItem('okf-theme', value); } catch (e) { /* ignore */ }\
+      try { localStorage.setItem(axis.key, picked); } catch (e) { /* ignore */ }\
     }\
-    /* Diagrams re-render with the matching mermaid theme when it changes. */\
+    /* Diagrams re-render with the matching palette when either axis moves. */\
     root.dispatchEvent(new CustomEvent('okf-theme-change'));\
+  };\
+  var axisOf = function (entry) {\
+    return entry.hasAttribute('data-theme-id') ? axes.theme : axes.scheme;\
   };\
   var open = function (yes) {\
     menu.hidden = !yes;\
@@ -498,7 +595,8 @@ const THEME_MENU_BOOT: &str = "\
   });\
   items.forEach(function (entry, ix) {\
     entry.addEventListener('click', function () {\
-      apply(entry.getAttribute('data-theme-id'), true);\
+      var axis = axisOf(entry);\
+      apply(axis, entry.getAttribute(axis.attr), true);\
       open(false);\
       btn.focus();\
     });\
@@ -529,11 +627,17 @@ const THEME_MENU_BOOT: &str = "\
     if (!menu.hidden && !picker.contains(e.relatedTarget)) open(false);\
   });\
   window.addEventListener('storage', function (e) {\
-    if (e.key === 'okf-theme') apply(e.newValue || fallback, false);\
+    if (e.key === 'okf-theme') apply(axes.theme, e.newValue || axes.theme.fallback, false);\
+    else if (e.key === 'okf-scheme') apply(axes.scheme, e.newValue || axes.scheme.fallback, false);\
   });\
-  var stored = null;\
-  try { stored = localStorage.getItem('okf-theme'); } catch (e) { /* ignore */ }\
-  mark(item(stored) ? stored : fallback);\
+  /* The markup ships the build defaults checked and the head boot has\
+     already applied the stored choices; mirror them onto the menu, taking\
+     the same legacy reading of an `okf-theme` that names an appearance. */\
+  var theme = stored('okf-theme');\
+  var scheme = stored('okf-scheme');\
+  if (!scheme && (theme === 'light' || theme === 'dark')) { scheme = theme; theme = null; }\
+  mark(axes.theme, item(axes.theme, theme) ? theme : axes.theme.fallback);\
+  mark(axes.scheme, item(axes.scheme, scheme) ? scheme : axes.scheme.fallback);\
 })()";
 
 /// Wires the hamburger's checkbox to the persisted nav state: on load it
@@ -1464,41 +1568,48 @@ pub fn directory_page(bundle: &Bundle, dir: &ConceptId) -> SitePage {
 mod tests {
     use super::*;
 
-    /// Every built-in palette must have a block in the compiled stylesheet.
+    /// Every built-in variant must have a block in the compiled stylesheet.
     ///
     /// The catalog is knowledge held twice — once as a Rust table, once as
-    /// CSS — and the failure mode of drift is silent: a menu entry that
-    /// applies a `data-theme` no rule matches, leaving the visitor on the
-    /// scheme base. Three shapes are legitimate: `auto` sets no attributes
-    /// at all, a scheme alias (`light`, `dark`) *is* the scheme base and so
-    /// needs no palette block, and every other entry must have one. The
-    /// Tailwind minifier drops the quotes from attribute values, so both
-    /// spellings count.
+    /// CSS — and the failure mode of drift is silent: a menu entry whose
+    /// variant has no rules looks like the base palette, which is also what
+    /// a *deliberately* missing variant looks like. `default` is the base
+    /// palette itself, so it is the one family with no `[data-theme]`
+    /// block. The Tailwind minifier drops the quotes from attribute values,
+    /// so both spellings count.
     #[test]
     fn builtin_themes_have_css_blocks() {
         for theme in BUILTIN_THEMES {
             assert!(is_safe_id(theme.id), "unsafe built-in id `{}`", theme.id);
-            if theme.id == config::AUTO_THEME_ID {
-                assert!(theme.scheme.is_none(), "`auto` must carry no scheme");
-                continue;
-            }
-            let scheme = theme
-                .scheme
-                .unwrap_or_else(|| panic!("`{}` must name a scheme", theme.id));
-            if theme.id == scheme.as_css() {
-                continue;
-            }
-            let quoted = format!("[data-theme=\"{}\"]", theme.id);
-            let bare = format!("[data-theme={}]", theme.id);
             assert!(
-                SITE_CSS.contains(&quoted) || SITE_CSS.contains(&bare),
-                "no `{}` block in site.css; run `cargo xtask tailwind`",
+                theme.light || theme.dark,
+                "`{}` defines no variant at all",
                 theme.id
             );
+            if theme.id == config::DEFAULT_THEME_ID {
+                assert!(theme.light && theme.dark, "the base family covers both");
+                continue;
+            }
+            for scheme in [Scheme::Light, Scheme::Dark] {
+                let quoted = format!(
+                    "[data-theme=\"{}\"][data-scheme=\"{}\"]",
+                    theme.id,
+                    scheme.as_css()
+                );
+                let bare = format!("[data-theme={}][data-scheme={}]", theme.id, scheme.as_css());
+                let present = SITE_CSS.contains(&quoted) || SITE_CSS.contains(&bare);
+                assert_eq!(
+                    present,
+                    theme.has(scheme),
+                    "`{}` {} variant: table and site.css disagree; run `cargo xtask tailwind`",
+                    theme.id,
+                    scheme.as_css()
+                );
+            }
         }
     }
 
-    /// The scheme ladders the palettes rely on must survive a recompile.
+    /// The scheme ladders every palette relies on must survive a recompile.
     #[test]
     fn site_css_keys_schemes_on_the_data_attribute() {
         for selector in [
@@ -1514,35 +1625,38 @@ mod tests {
         );
     }
 
-    /// The boot inlines the catalog as its allowlist, and only ids that can
-    /// be written into a JavaScript string literal reach it.
+    /// The boot inlines the family catalog as its allowlist, and only ids
+    /// that can be written into a JavaScript string literal reach it.
     #[test]
     fn theme_boot_inlines_the_catalog() {
         let themes = [
             ThemeEntry {
-                id: config::AUTO_THEME_ID,
-                label: "Auto",
-                scheme: None,
+                id: config::DEFAULT_THEME_ID,
+                label: "Default",
+                light: true,
+                dark: true,
             },
             ThemeEntry {
-                id: "dark",
-                label: "Dark",
-                scheme: Some(Scheme::Dark),
+                id: "nord",
+                label: "Nord",
+                light: false,
+                dark: true,
             },
             ThemeEntry {
                 id: "no'quotes",
                 label: "Hostile",
-                scheme: Some(Scheme::Light),
+                light: true,
+                dark: false,
             },
         ];
-        let js = theme_boot(&themes, "dark");
-        assert!(js.contains("var S = {'dark':'dark'}"), "{js}");
-        assert!(js.contains("A = 'auto', D = 'dark'"), "{js}");
+        let js = theme_boot(&themes, "nord", SchemePref::Dark);
+        assert!(js.contains("var F = {'default':1,'nord':1}"), "{js}");
+        assert!(js.contains("DT = 'nord', DS = 'dark'"), "{js}");
         assert!(!js.contains("no'quotes"), "unsafe id reached the literal");
 
         // An id the build does not define cannot become the default: the
-        // fallback is `auto`, which sets no attributes at all.
-        let js = theme_boot(&themes, "not an id");
-        assert!(js.contains("D = 'auto'"), "{js}");
+        // fallback is the base family, which sets no attribute at all.
+        let js = theme_boot(&themes, "not an id", SchemePref::Auto);
+        assert!(js.contains("DT = 'default', DS = 'auto'"), "{js}");
     }
 }

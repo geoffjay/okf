@@ -183,7 +183,8 @@ okf site [bundle]            # writes <bundle>/site by default
 okf site . --out public      # choose the output directory
 okf site . --today 2026-07-01  # pin staleness for reproducible builds
 okf site . --title "Docs"    # header title; overrides .okf/config.yaml
-okf site . --theme sepia     # theme a first visit gets; overrides .okf/config.yaml
+okf site . --theme nord      # theme a first visit gets; overrides .okf/config.yaml
+okf site . --scheme dark     # appearance a first visit gets: auto, light, or dark
 ```
 
 - **Pure build-time generation.** A Rust binary in, a directory of HTML out —
@@ -203,16 +204,19 @@ okf site . --theme sepia     # theme a first visit gets; overrides .okf/config.y
   language, GitHub light/dark themes resolved as CSS variables (theme
   toggling is free), shipped only when a page has code, with the escaped
   source kept as the no-JS fallback.
-- **Themes a reader can change.** The header's theme menu offers `auto`
-  (follow the system), `light`, `dark`, `sepia`, and `contrast`, plus any
-  palette the bundle defines. The choice persists in `localStorage` and is
-  applied to `<html>` before first paint, so reloading never flashes: two
-  attributes, `data-scheme` (`light`/`dark`, absent = follow the system) for
-  the base palette and `data-theme` for its overrides. Every color in the
-  stylesheet resolves through custom properties, so switching is instant and
-  needs no second stylesheet, no recompile, and no page reload — code
-  highlighting follows the scheme through shiki's CSS variables, and
-  diagrams re-render on the palette's own tokens.
+- **Themes a reader can change.** The header menu carries two independent
+  axes: an appearance (`auto`, following the system, or `light`/`dark`) and
+  a theme — `default`, `sepia`, `contrast`, plus any the bundle defines. A
+  theme is a *family* of up to two variants, so flipping the appearance
+  switches between a theme's light and dark forms; a family that defines
+  only one variant falls through to the built-in palette for the other, and
+  the menu says so. Both choices persist in `localStorage` and are applied
+  to `<html>` before first paint as `data-scheme` and `data-theme`, so
+  reloading never flashes. Every color in the stylesheet resolves through
+  custom properties, so switching is instant and needs no second
+  stylesheet, no recompile, and no page reload — code highlighting follows
+  the appearance through shiki's CSS variables, and diagrams re-render on
+  the palette's own tokens.
 - **Parity panels.** Every concept page shows what the studio inspector does:
   trust/status/staleness badges, backlinks, sources with footnote→source
   attribution, a headings table of contents, and validator/lint findings.
@@ -236,15 +240,21 @@ okf site . --theme sepia     # theme a first visit gets; overrides .okf/config.y
   site:
     title: "Travel knowledge"      # `okf site --title` still overrides this
     theme: nord                    # first-visit theme; `--theme` overrides it
-    themes:                        # extra palettes, offered in the header menu
+    scheme: auto                   # first-visit appearance; `--scheme` overrides it
+    themes:                        # one entry per variant, merged by id
       - id: nord
         label: "Nord"
-        scheme: dark               # base palette, code colors, diagram mode
+        scheme: dark               # optional, defaults to light
         colors:                    # closed token set; every key optional
           surface: "#2e3440"
           ink: "#eceff4"
           edge: "#4c566a"
           link: "#88c0d0"
+      - id: nord                   # same id = the family's other variant
+        scheme: light
+        colors:
+          surface: "#eceff4"
+          ink: "#2e3440"
     fonts:
       body: "Newsreader, Georgia, serif"
       code: "JetBrains Mono, ui-monospace, monospace"
@@ -261,21 +271,26 @@ okf site . --theme sepia     # theme a first visit gets; overrides .okf/config.y
   Fonts resolve through two CSS custom properties (`--font-body`,
   `--font-code`) and palettes through nineteen more, so a configured bundle
   gets generated `assets/fonts.css` and `assets/theme.css` — `@font-face`
-  rules for the copied files, `:root[data-theme="…"]` blocks for the
-  palettes — linked after the inline stylesheet. A palette overrides only
-  the tokens it names; its `scheme` supplies the rest, and taking a built-in
-  id (`dark`) restyles that theme instead of adding a menu entry. Font files
-  are copied to `assets/fonts/`, never fetched from a CDN, so the site still
-  deploys offline and opens over `file://`; mermaid diagrams pick up the body
-  family and the palette too. Bundles that configure nothing write neither
-  generated file, and content stays permissive while the config is strict: an
-  unknown key, a bad color, a missing font file, or a `theme:` naming a theme
-  nothing defines fails the build (an unknown *section* is only reported, so a
-  config written for a newer `okf` still builds). Each build prints the file
-  it read and the settings it supplied — `read docs/.okf/config.yaml (title,
-  fonts.body, theme, themes)` — so a config the build never saw (a `.okf/`
-  above the bundle root, an older `okf`) shows up as a missing line instead of
-  a mystery.
+  rules for the copied files, `:root[data-theme="…"][data-scheme="…"]`
+  blocks for the variants — linked after the inline stylesheet. A variant
+  overrides only the tokens it names, its appearance's base palette
+  supplies the rest, and a family that defines one variant leaves the other
+  appearance on the base. Taking a built-in id restyles that theme instead
+  of adding a menu entry, and supplies a variant it lacks (a dark `sepia`
+  completes the light-only built-in). `auto`, `light`, and `dark` are
+  reserved: they name appearances, so they go in `scheme:`, not `id:`. Font
+  files are copied to `assets/fonts/`, never fetched from a CDN, so the
+  site still deploys offline and opens over `file://`; mermaid diagrams
+  pick up the body family and the palette too. Bundles that configure
+  nothing write neither generated file, and content stays permissive while
+  the config is strict: an unknown key, a bad color, a missing font file, a
+  duplicate variant, or a `theme:` naming a theme nothing defines fails the
+  build (an unknown *section* is only reported, so a config written for a
+  newer `okf` still builds). Each build prints the file it read and the
+  settings it supplied — `read docs/.okf/config.yaml (title, fonts.body,
+  theme, themes)` — so a config the build never saw (a `.okf/` above the
+  bundle root, an older `okf`) shows up as a missing line instead of a
+  mystery.
 
 `okf site` is on by default; opt out with `--no-default-features` (see
 [Using as a Rust library](#using-as-a-rust-library)). Built on the

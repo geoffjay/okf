@@ -3,6 +3,7 @@
 //! panels, dashboard numbers, and the no-raw-HTML security posture.
 
 use okf_core::Date;
+use okf_web::config::SchemePref;
 use okf_web::{SiteError, SiteOptions, generate};
 use std::path::{Path, PathBuf};
 
@@ -90,6 +91,7 @@ fn run(b: &TestBundle, today: Option<Date>) -> okf_web::SiteSummary {
         today,
         title: None,
         theme: None,
+        scheme: None,
     })
     .unwrap()
 }
@@ -524,6 +526,7 @@ fn out_dir_is_created_when_missing() {
         today: None,
         title: None,
         theme: None,
+        scheme: None,
     })
     .unwrap();
     assert!(out.join("index.html").is_file());
@@ -614,6 +617,7 @@ fn site_title_lives_in_the_header_and_is_configurable() {
         today: None,
         title: Some("Foo Site".to_string()),
         theme: None,
+        scheme: None,
     })
     .unwrap();
     let dash = b.page("index.html");
@@ -852,6 +856,7 @@ fn run_titled(b: &TestBundle, title: Option<&str>) -> okf_web::SiteSummary {
         today: None,
         title: title.map(str::to_string),
         theme: None,
+        scheme: None,
     })
     .unwrap()
 }
@@ -866,6 +871,7 @@ fn run_themed(b: &TestBundle, theme: Option<&str>) -> Result<okf_web::SiteSummar
         today: None,
         title: None,
         theme: theme.map(str::to_string),
+        scheme: None,
     })
 }
 
@@ -937,13 +943,14 @@ fn config_problems_fail_the_build_or_are_noted() {
         today: None,
         title: None,
         theme: None,
+        scheme: None,
     })
     .unwrap_err();
     assert!(matches!(err, okf_web::SiteError::Config(_)), "{err:?}");
     let message = err.to_string();
     assert!(message.contains("unknown key `titel`"), "{message}");
     assert!(
-        message.contains("known keys: title, fonts, theme, themes"),
+        message.contains("known keys: title, fonts, theme, scheme, themes"),
         "{message}"
     );
     assert!(message.contains(".okf/config.yaml"), "{message}");
@@ -955,6 +962,7 @@ fn config_problems_fail_the_build_or_are_noted() {
         today: None,
         title: None,
         theme: None,
+        scheme: None,
     })
     .unwrap_err()
     .to_string();
@@ -1101,6 +1109,7 @@ fn font_files_are_copied_and_described() {
         today: None,
         title: None,
         theme: None,
+        scheme: None,
     })
     .unwrap_err();
     assert!(matches!(err, okf_web::SiteError::Config(_)), "{err:?}");
@@ -1110,8 +1119,9 @@ fn font_files_are_copied_and_described() {
 }
 
 /// The default site ships the built-in catalog and nothing generated: the
-/// picker is in the header, the pre-paint boot carries the catalog as its
-/// allowlist, and no `assets/theme.css` is written or linked.
+/// picker is in the header with both axes, the pre-paint boot carries the
+/// family list as its allowlist, and no `assets/theme.css` is written or
+/// linked.
 #[test]
 fn builtin_themes_ship_without_a_generated_stylesheet() {
     let b = fixture("themes-builtin", false);
@@ -1122,41 +1132,58 @@ fn builtin_themes_ship_without_a_generated_stylesheet() {
         let html = b.page(page);
         assert!(!html.contains("theme.css"), "no theme.css on {page}");
         assert!(
-            html.contains(r#"<ul class="theme-menu" role="menu""#),
+            html.contains(r#"<div class="theme-menu" role="menu""#),
             "picker menu on {page}: {html}"
         );
+        // Appearance and theme are separate radio groups.
+        for id in ["auto", "light", "dark"] {
+            assert!(
+                html.contains(&format!(r#"data-scheme-id="{id}""#)),
+                "appearance item {id} on {page}"
+            );
+        }
         for (id, label) in [
-            ("auto", "Auto (system)"),
-            ("light", "Light"),
-            ("dark", "Dark"),
+            ("default", "Default"),
             ("sepia", "Sepia"),
             ("contrast", "High contrast"),
         ] {
             assert!(
                 html.contains(&format!(r#"data-theme-id="{id}""#)),
-                "menu item {id} on {page}"
+                "theme item {id} on {page}"
             );
             assert!(html.contains(label), "menu label {label} on {page}");
         }
-        // `auto` is the absence of both attributes, so it carries no scheme.
+        // A one-variant family says so; a two-variant one does not.
         assert!(
-            html.contains(
-                "<button class=\"theme-item\" type=\"button\" role=\"menuitemradio\" \
-                 data-theme-id=\"auto\" aria-checked=\"true\">Auto (system)</button>"
-            ),
-            "auto item has no scheme and is the default: {html}"
+            html.contains(r#"Sepia<span class="theme-variant">light only</span>"#),
+            "sepia is light only: {html}"
+        );
+        assert_eq!(
+            html.matches(r#"class="theme-variant""#).count(),
+            1,
+            "only the single-variant family is annotated: {html}"
+        );
+        // Neither axis is pinned, so the document carries no attributes and
+        // the base palette applies with no JavaScript at all.
+        assert!(
+            html.contains(r#"<html lang="en">"#),
+            "no pinned attributes: {html}"
         );
         assert!(
-            html.contains(r#"var S = {'light':'light','dark':'dark','sepia':'light',"#),
-            "boot inlines the catalog: {html}"
+            html.contains("var F = {'default':1,'sepia':1,'contrast':1}"),
+            "boot inlines the family catalog: {html}"
         );
-        assert!(html.contains("D = 'auto'"), "auto is the default: {html}");
+        assert!(
+            html.contains("DT = 'default', DS = 'auto'"),
+            "the base family and the system appearance are the defaults: {html}"
+        );
     }
 }
 
-/// A bundle palette becomes a `[data-theme]` block in `assets/theme.css`,
-/// linked after the inline stylesheet (and after `fonts.css`) at every page
-/// depth, and a menu entry after the built-ins.
+/// Two entries with one id are one family with two variants: each variant
+/// is scoped to its appearance (explicitly and through the media query for
+/// the `auto` case), the menu offers the family once, and flipping
+/// appearance switches variants rather than themes.
 #[test]
 fn configured_themes_are_emitted_and_offered() {
     let b = fixture("themes-config", false);
@@ -1164,7 +1191,9 @@ fn configured_themes_are_emitted_and_offered() {
         ".okf/config.yaml",
         "site:\n  theme: nord\n  fonts:\n    body: Newsreader, serif\n  themes:\n    \
          - id: nord\n      label: Nord\n      scheme: dark\n      colors:\n        \
-         ink: \"#eceff4\"\n        surface: \"#2e3440\"\n",
+         ink: \"#eceff4\"\n        surface: \"#2e3440\"\n    \
+         - id: nord\n      scheme: light\n      colors:\n        \
+         surface: \"#eceff4\"\n        ink: \"#2e3440\"\n",
     );
     let summary = run(&b, None);
     assert!(summary.config_settings.contains(&"themes"), "{summary:?}");
@@ -1172,8 +1201,19 @@ fn configured_themes_are_emitted_and_offered() {
 
     let css = b.page("assets/theme.css");
     assert!(
-        css.contains(":root[data-theme=\"nord\"] {\n  --surface: #2e3440;\n  --ink: #eceff4;\n}\n"),
-        "canonical token order, constructed values: {css}"
+        css.contains(
+            ":root[data-theme=\"nord\"][data-scheme=\"light\"] {\n  \
+             --surface: #eceff4;\n  --ink: #2e3440;\n}\n"
+        ),
+        "light variant, canonical token order: {css}"
+    );
+    assert!(
+        css.contains(
+            "@media (prefers-color-scheme: dark) {\n  \
+             :root[data-theme=\"nord\"]:not([data-scheme]) {\n    \
+             --surface: #2e3440;\n    --ink: #eceff4;\n  }\n}\n"
+        ),
+        "dark variant also covers the attribute-less auto case: {css}"
     );
 
     let dash = b.page("index.html");
@@ -1189,46 +1229,94 @@ fn configured_themes_are_emitted_and_offered() {
             .contains(r#"<link rel="stylesheet" href="../assets/theme.css">"#),
         "nested page climbs one level"
     );
-    assert!(
-        dash.contains(r#"data-theme-id="nord" data-theme-scheme="dark" aria-checked="true""#),
-        "the configured theme is offered and is the build default: {dash}"
+    assert_eq!(
+        dash.matches(r#"data-theme-id="nord""#).count(),
+        1,
+        "one menu entry for the family: {dash}"
     );
     assert!(
-        dash.contains("D = 'nord'") && dash.contains("'nord':'dark'"),
-        "the boot applies it before first paint: {dash}"
+        !dash.contains(r#"Nord<span class="theme-variant">"#),
+        "a two-variant family carries no fallback note: {dash}"
+    );
+    // Pinned families are rendered into the markup, so a reader without
+    // JavaScript gets them too; the appearance stays unpinned.
+    assert!(
+        dash.contains(r#"<html lang="en" data-theme="nord">"#),
+        "the pinned family is server-rendered: {dash}"
+    );
+    assert!(
+        dash.contains("DT = 'nord', DS = 'auto'") && dash.contains("'nord':1"),
+        "the boot knows the family and the default: {dash}"
     );
 }
 
-/// A bundle theme may take a built-in id: the cascade overrides that
-/// palette's tokens, and the menu keeps one entry rather than growing a
-/// duplicate.
+/// A bundle family may take a built-in id: the cascade overrides that
+/// family's tokens, the menu keeps one entry, and a variant the built-in
+/// lacks completes it — a dark `sepia` makes the light-only family cover
+/// both appearances.
 #[test]
-fn a_configured_theme_may_shadow_a_builtin() {
-    let b = fixture("themes-shadow", false);
+fn a_configured_theme_may_extend_a_builtin() {
+    let b = fixture("themes-extend", false);
     b.write(
         ".okf/config.yaml",
-        "site:\n  themes:\n    - id: dark\n      scheme: dark\n      \
-         colors:\n        surface: \"#101014\"\n",
+        "site:\n  themes:\n    - id: sepia\n      scheme: dark\n      \
+         colors:\n        surface: \"#2b2118\"\n",
     );
     run(&b, None);
     assert!(
-        b.page("assets/theme.css")
-            .contains(":root[data-theme=\"dark\"] {\n  --surface: #101014;\n}"),
-        "the override lands in the generated sheet"
+        b.page("assets/theme.css").contains(
+            ":root[data-theme=\"sepia\"][data-scheme=\"dark\"] {\n  --surface: #2b2118;\n}"
+        ),
+        "the new variant lands in the generated sheet"
     );
     let dash = b.page("index.html");
     assert_eq!(
-        dash.matches(r#"data-theme-id="dark""#).count(),
+        dash.matches(r#"data-theme-id="sepia""#).count(),
         1,
         "no duplicate menu entry: {dash}"
     );
     assert!(
-        dash.contains(r#"data-theme-id="dark" data-theme-scheme="dark""#),
-        "the built-in entry is kept: {dash}"
+        !dash.contains(r#"class="theme-variant""#),
+        "sepia now covers both appearances, so nothing is annotated: {dash}"
     );
 }
 
-/// A default theme nothing defines fails the build, and the two sources
+/// The appearance axis is pinnable too, by config and by option, and it is
+/// independent of the family.
+#[test]
+fn the_appearance_axis_is_pinnable() {
+    let b = fixture("themes-scheme", false);
+    b.write(".okf/config.yaml", "site:\n  scheme: dark\n");
+
+    let summary = run(&b, None);
+    assert!(summary.config_settings.contains(&"scheme"), "{summary:?}");
+    let dash = b.page("index.html");
+    assert!(
+        dash.contains(r#"<html lang="en" data-scheme="dark">"#),
+        "the pinned appearance is server-rendered: {dash}"
+    );
+    assert!(dash.contains("DT = 'default', DS = 'dark'"), "{dash}");
+    assert!(
+        dash.contains(r#"data-scheme-id="dark" aria-checked="true""#),
+        "the menu marks it: {dash}"
+    );
+
+    // The option wins, and `auto` is the absence of the attribute.
+    generate(SiteOptions {
+        root: b.root.clone(),
+        out_dir: b.site(),
+        today: None,
+        title: None,
+        theme: None,
+        scheme: Some(SchemePref::Auto),
+    })
+    .unwrap();
+    let dash = b.page("index.html");
+    assert!(dash.contains(r#"<html lang="en">"#), "{dash}");
+    assert!(dash.contains("DS = 'auto'"), "{dash}");
+}
+
+/// A default family nothing defines fails the build, and the two sources
 /// report differently: the config path for `site.theme`, the caller's own
 /// mistake for the option.
 #[test]
@@ -1239,10 +1327,7 @@ fn an_unknown_default_theme_fails_the_build() {
     assert!(matches!(err, SiteError::Theme(_)), "{err:?}");
     let message = err.to_string();
     assert!(message.contains("`nord` is not one of"), "{message}");
-    assert!(
-        message.contains("auto, light, dark, sepia, contrast"),
-        "{message}"
-    );
+    assert!(message.contains("default, sepia, contrast"), "{message}");
 
     b.write(".okf/config.yaml", "site:\n  theme: nord\n");
     let err = run_themed(&b, None).unwrap_err();
@@ -1251,9 +1336,9 @@ fn an_unknown_default_theme_fails_the_build() {
     assert!(message.contains("`site.theme` names `nord`"), "{message}");
     assert!(message.contains(".okf/config.yaml"), "{message}");
 
-    // The option still overrides the config — including back to a theme
+    // The option still overrides the config — including back to a family
     // that does exist.
     let summary = run_themed(&b, Some("sepia")).expect("option wins");
     assert!(summary.pages > 0);
-    assert!(b.page("index.html").contains("D = 'sepia'"));
+    assert!(b.page("index.html").contains("DT = 'sepia'"));
 }
