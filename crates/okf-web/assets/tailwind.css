@@ -667,7 +667,7 @@
 
   .layout {
     @apply grid pt-16;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 320px 1fr;
     min-height: calc(100vh - 4rem);
   }
 
