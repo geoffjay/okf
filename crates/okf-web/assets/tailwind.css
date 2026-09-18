@@ -697,6 +697,17 @@
       border-left-color: var(--ink);
       padding-left: calc(0.75rem - 1px); /* absorb the +1px border so text stays put */
     }
+    /* Nesting depth is visible: every submenu below the first steps right
+       by one rule-to-label gap and carries its ancestor's rule. A level's
+       own rule is per-row (the `a` above), so it only spans that level's
+       rows — the rule beside a *sub*-submenu has to come from the nested
+       `ul` itself, which also keeps the ancestor rule unbroken past the
+       rows it contains. Border plus indent compound with depth, landing
+       each level's rule exactly where its parent's label starts. */
+    ul ul ul {
+      border-left: 2px solid var(--edge);
+      padding-left: 0.75rem;
+    }
     /* Submenu heading row: the directory link, then its collapse toggle
        pinned to the far right. `aria-expanded` on the toggle carries the
        whole collapse state — the caret's direction and the submenu's

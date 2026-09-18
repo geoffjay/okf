@@ -17,7 +17,9 @@ What it emits:
   with relative links so the site deploys under any base path.
 - A nav tree mirroring the bundle layout — every directory is a collapsible
   submenu with a caret toggle (down when open, right when closed), expanded
-  by default and remembered in `localStorage` — plus a trust dashboard
+  by default and remembered in `localStorage`, and every level below the
+  first carries a left rule and steps one indent right, so a sub-submenu
+  reads as nested rather than as a sibling — plus a trust dashboard
   (`__okf/dashboard.html`) and a bundle-wide mermaid cross-link graph
   (`__okf/graph.html`).
 - Rendered mermaid diagrams: ` ```mermaid ` blocks become client-side

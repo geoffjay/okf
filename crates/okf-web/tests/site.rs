@@ -744,6 +744,52 @@ fn nav_submenus_are_collapsible_and_default_to_expanded() {
     );
 }
 
+/// Nesting depth reads off the nav: a sub-submenu is indented one step past
+/// its parent and shows one rule per level. The indent is pure CSS over the
+/// nested `<ul>` markup, so both halves are asserted — the depth-3 list the
+/// rule needs, and the rule itself from the committed `site.css`.
+#[test]
+fn nav_nested_submenus_indent_one_step_per_level() {
+    let b = TestBundle::new("nav-nesting");
+    b.write("index.md", "---\nokf_version: \"0.2\"\n---\n\n# Index\n");
+    b.write(
+        "log.md",
+        "# Update Log\n\n## 2026-08-20\n* **Update**: init.\n",
+    );
+    b.write(
+        "policies/travel.md",
+        "---\ntype: Policy\ntitle: Travel\n---\n\n# Travel\n",
+    );
+    b.write(
+        "policies/nested/deep.md",
+        "---\ntype: Policy\ntitle: Deep\n---\n\n# Deep\n",
+    );
+    run(&b, None);
+    let dash = b.page("index.html");
+    let nav = &dash[dash.find(r#"<nav id="site-nav""#).unwrap()..dash.find("</nav>").unwrap()];
+
+    // A directory `li` wraps its children in a `ul`, so a sub-submenu is a
+    // third-level list — what the depth rule keys on.
+    let nested = &nav[nav.find(r#"<li data-dir="policies/nested">"#).unwrap()..];
+    assert!(
+        nested.contains(r#"</div><ul><li><a href="policies/nested/deep.html">Deep</a>"#),
+        "sub-submenu is a nested ul under its directory row: {nav}"
+    );
+
+    // Per-row rule for every nested item (level 2 and below), plus one rule
+    // and one indent step on each list below the first — so a sub-submenu
+    // carries its ancestor's rule and sits a level further right. From the
+    // committed site.css; regenerate with `cargo xtask tailwind`.
+    assert!(
+        dash.contains(".tree ul ul a{border-left:2px solid var(--edge);padding-left:.75rem}"),
+        "stylesheet rules nested items; regenerate site.css"
+    );
+    assert!(
+        dash.contains(".tree ul ul ul{border-left:2px solid var(--edge);padding-left:.75rem}"),
+        "stylesheet indents and rules each deeper submenu; regenerate site.css"
+    );
+}
+
 /// The search asset: index shape, XSS-escaped producer content, heading
 /// anchors that match the emitted ids, and lazy-load wiring in the header.
 #[test]
