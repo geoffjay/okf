@@ -34,6 +34,7 @@ A **pure-Rust** implementation, library and CLI toolkit for the [Open Knowledge 
   - [5. Inspect trust and visualize the graph](#5-inspect-trust-and-visualize-the-graph)
   - [6. Explore with OKF Studio](#6-explore-with-okf-studio)
 - [Interactive studio: `okf studio`](#interactive-studio-okf-studio)
+- [Static site: `okf site`](#static-site-okf-site)
 - [Anatomy of an OKF bundle](#anatomy-of-an-okf-bundle)
   - [Directory structure](#directory-structure)
   - [Concept document example](#concept-document-example)
@@ -42,13 +43,14 @@ A **pure-Rust** implementation, library and CLI toolkit for the [Open Knowledge 
   - [Trust tiers](#trust-tiers)
   - [Freshness and staleness](#freshness-and-staleness)
   - [Provenance and footnote attribution](#provenance-and-footnote-attribution)
+  - [Cross-links, heading links, and anchors](#cross-links-heading-links-and-anchors)
   - [Attested computations](#attested-computations)
 - [CLI reference and workflows](#cli-reference-and-workflows)
   - [Interactive studio: studio](#interactive-studio-studio)
   - [Scaffolding: init and new](#scaffolding-init-and-new)
-  - [Bundle manipulation: mv, rm, split, and merge](#bundle-manipulation-mv-rm-split-and-merge)
   - [Quality gate: validate and lint](#quality-gate-validate-and-lint)
   - [Auditing trust: trust and info](#auditing-trust-trust-and-info)
+  - [Searching: search](#searching-search)
   - [Link graph and discovery: links and graph](#link-graph-and-discovery-links-and-graph)
   - [Listing computations: computations](#listing-computations-computations)
   - [Semantic diffs: diff](#semantic-diffs-diff)
@@ -154,8 +156,10 @@ okf studio .
 
 Unlike one-off commands that run once and exit, the studio stays open and automatically updates when files are edited on disk.
 
+- **Omnisearch (`/`)**: Fuzzy search across ids, titles, tags, headings, and
+  body text with the shared filter syntax (`#tag`, `tier:`, `is:stale`,
+  `is:broken`) — the same engine as `okf search` and the site.
 - **Browse and read**: Navigate directories, read rendered Markdown, follow links, and inspect metadata and revision history.
-- **Visual link graph**: Explore connections and dependencies between concepts interactively.
 - **Audit bundle health**: View trust levels, freshness, and concepts that need attention.
 - **Computations**: Inspect Attested Computation contracts and test parameter inputs.
 - **Refactor safely**: Move, rename, merge, split, or delete concepts with preview confirmation before changes are saved.
@@ -163,6 +167,135 @@ Unlike one-off commands that run once and exit, the studio stays open and automa
 ```sh
 okf studio [bundle]
 ```
+
+---
+
+## Static site: okf site
+
+`okf site` generates a deployable static website from a bundle — the same
+engine as `okf studio`, but rendered to a directory of HTML instead of a live
+terminal. Where `okf graph --format mermaid` prints diagram source and the
+studio shows fenced `mermaid` blocks as boxed code, the site renders those
+diagrams for real, in the browser.
+
+```sh
+okf site [bundle]            # writes <bundle>/site by default
+okf site . --out public      # choose the output directory
+okf site . --today 2026-07-01  # pin staleness for reproducible builds
+okf site . --title "Docs"    # header title; overrides .okf/config.yaml
+okf site . --theme nord      # theme a first visit gets; overrides .okf/config.yaml
+okf site . --scheme dark     # appearance a first visit gets: auto, light, or dark
+```
+
+- **Pure build-time generation.** A Rust binary in, a directory of HTML out —
+  no server, no WASM, no JavaScript framework. Deploys to GitHub Pages or any
+  static host; relative URLs mirror the bundle layout, so it works under any
+  base path.
+- **Tailwind-styled, zero external CSS.** Pages inline one stylesheet compiled
+  from [Tailwind CSS v4](https://tailwindcss.com); the site loads no external
+  stylesheet (the vendored mermaid.js and shiki.js are the only external
+  assets, each only on pages that use them).
+- **Rendered diagrams.** Fenced ` ```mermaid ` blocks render client-side via a
+  vendored [mermaid.js](https://mermaid.js.org/) (shipped only when a page has
+  a diagram). Diagram source is escaped into a `<pre>` fallback that survives
+  render failures and no-JS.
+- **Syntax-highlighted code.** Fenced blocks with a language tag highlight
+  client-side via a vendored [shiki](https://shiki.style) — every shiki
+  language, GitHub light/dark themes resolved as CSS variables (theme
+  toggling is free), shipped only when a page has code, with the escaped
+  source kept as the no-JS fallback.
+- **Themes a reader can change.** The header menu carries two independent
+  axes: an appearance (`auto`, following the system, or `light`/`dark`) and
+  a theme — `default`, `sepia`, `contrast`, plus any the bundle defines. A
+  theme is a *family* of up to two variants, so flipping the appearance
+  switches between a theme's light and dark forms; a family that defines
+  only one variant falls through to the built-in palette for the other, and
+  the menu says so. Both choices persist in `localStorage` and are applied
+  to `<html>` before first paint as `data-scheme` and `data-theme`, so
+  reloading never flashes. Every color in the stylesheet resolves through
+  custom properties, so switching is instant and needs no second
+  stylesheet, no recompile, and no page reload — code highlighting follows
+  the appearance through shiki's CSS variables, and diagrams re-render on
+  the palette's own tokens.
+- **Parity panels.** Every concept page shows what the studio inspector does:
+  trust/status/staleness badges, backlinks, sources with footnote→source
+  attribution, a headings table of contents, and validator/lint findings.
+- **Search that works anywhere.** Every page's header search runs the same
+  engine as `okf search` and the studio palette: `assets/search-index.js`
+  (build-time JSON index of metadata, heading anchors, and bodies, with
+  HTML-breaking bytes JS-escaped) plus a first-party vanilla-JS client,
+  lazy-fetched only on the first keystroke — no external search binary, no
+  WASM. Filters (`#tag`, `tier:`, `is:stale`, …) compose exactly as in the
+  CLI.
+- **Dashboard and graph.** A trust dashboard (tier distribution, attention
+  queue, actor stats — the numbers agree with `okf info` / `okf trust`) plus a
+  bundle-wide mermaid cross-link graph.
+- **Per-bundle settings in the bundle.** A bundle may pin its site settings in
+  `.okf/config.yaml` — a dot-directory every OKF walker ignores, so
+  configuration never becomes content and never shows up in `okf validate`,
+  `okf lint`, or the link graph:
+
+  ```yaml
+  # .okf/config.yaml
+  site:
+    title: "Travel knowledge"      # `okf site --title` still overrides this
+    theme: nord                    # first-visit theme; `--theme` overrides it
+    scheme: auto                   # first-visit appearance; `--scheme` overrides it
+    themes:                        # one entry per variant, merged by id
+      - id: nord
+        label: "Nord"
+        scheme: dark               # optional, defaults to light
+        colors:                    # closed token set; every key optional
+          surface: "#2e3440"
+          ink: "#eceff4"
+          edge: "#4c566a"
+          link: "#88c0d0"
+      - id: nord                   # same id = the family's other variant
+        scheme: light
+        colors:
+          surface: "#eceff4"
+          ink: "#2e3440"
+    fonts:
+      body: "Newsreader, Georgia, serif"
+      code: "JetBrains Mono, ui-monospace, monospace"
+      files:                       # self-hosted: .okf/fonts/<file>
+        - family: Newsreader
+          file: newsreader-400.woff2
+          weight: 400
+        - family: Newsreader
+          file: newsreader-700i.woff2
+          weight: 700
+          style: italic
+  ```
+
+  Fonts resolve through two CSS custom properties (`--font-body`,
+  `--font-code`) and palettes through nineteen more, so a configured bundle
+  gets generated `assets/fonts.css` and `assets/theme.css` — `@font-face`
+  rules for the copied files, `:root[data-theme="…"][data-scheme="…"]`
+  blocks for the variants — linked after the inline stylesheet. A variant
+  overrides only the tokens it names, its appearance's base palette
+  supplies the rest, and a family that defines one variant leaves the other
+  appearance on the base. Taking a built-in id restyles that theme instead
+  of adding a menu entry, and supplies a variant it lacks (a dark `sepia`
+  completes the light-only built-in). `auto`, `light`, and `dark` are
+  reserved: they name appearances, so they go in `scheme:`, not `id:`. Font
+  files are copied to `assets/fonts/`, never fetched from a CDN, so the
+  site still deploys offline and opens over `file://`; mermaid diagrams
+  pick up the body family and the palette too. Bundles that configure
+  nothing write neither generated file, and content stays permissive while
+  the config is strict: an unknown key, a bad color, a missing font file, a
+  duplicate variant, or a `theme:` naming a theme nothing defines fails the
+  build (an unknown *section* is only reported, so a config written for a
+  newer `okf` still builds). Each build prints the file it read and the
+  settings it supplied — `read docs/.okf/config.yaml (title, fonts.body,
+  theme, themes)` — so a config the build never saw (a `.okf/` above the
+  bundle root, an older `okf`) shows up as a missing line instead of a
+  mystery.
+
+`okf site` is on by default; opt out with `--no-default-features` (see
+[Using as a Rust library](#using-as-a-rust-library)). Built on the
+[`okf-web`](https://crates.io/crates/okf-web) crate, whose `generate` entry
+point can be called directly.
 
 ---
 
@@ -294,6 +427,25 @@ sources:
 ```
 
 Inline claims reference sources via standard Markdown footnotes keyed to `sources[].id` (e.g., `According to company guidelines...[^mileage-guide]`).
+
+### Cross-links, heading links, and anchors
+
+Concepts link to each other with standard Markdown links (spec §6.1), either bundle-absolute (`/tables/customers.md`, recommended) or relative (`./other.md`). A link may address a specific **section** of its target by appending the heading's anchor, which every renderer derives as a GitHub-style slug:
+
+```markdown
+See the [join keys](/tables/orders.md#join-keys) and [Enterprise tier](#enterprise-tier).
+```
+
+For convenience, `okf` also expands `[[target]]` **heading-link shorthand** while rendering, so producers that write wiki-style links get working links everywhere (`okf site` pages, the studio viewer, the link graph):
+
+| Shorthand | Expands to | Points at |
+|-----------|------------|-----------|
+| `[[Pricing Tiers]]` | `[Pricing Tiers](#pricing-tiers)` | The `## Pricing Tiers` heading of the same document |
+| `[[#Pricing Tiers]]` | `[Pricing Tiers](#pricing-tiers)` | Same, written as an explicit anchor |
+| `[[plans/rollout]]` | `[plans/rollout](plans/rollout)` | Another concept |
+| `[[plans/rollout#Phase 2]]` | `[Phase 2](plans/rollout#phase-2)` | A heading in another concept |
+
+Fragments are slugified (the transform is idempotent, so already-slug targets are unchanged), and wikilinks inside fenced code blocks or inline code stay verbatim. `okf validate` reports anchors — shorthand or authored — that match no heading in the target document.
 
 ### Attested computations
 
@@ -428,6 +580,37 @@ computations/mileage_calc [stable] machine-confirmed
 okf info ./company_knowledge
 ```
 
+### Searching: search
+
+`okf search` runs the same engine the studio palette uses over concept
+metadata (ids, titles, descriptions, tags, headings) and body text, with a
+composable filter syntax shared by every search surface:
+
+| Term          | Meaning                          | Matches                        |
+|---------------|----------------------------------|--------------------------------|
+| `#tag`        | frontmatter tag                  | `tags` (case-insensitive)      |
+| `type:X`      | concept type                     | `type`                         |
+| `tier:X`      | trust tier                       | `human-reviewed`, `machine-confirmed`, `unverified` |
+| `status:X`    | lifecycle status                 | `status`                       |
+| `is:stale`    | stale on `today` (or `--today`)  | derived flag                   |
+| `is:broken`   | has broken outgoing links        | derived flag                   |
+| anything else | free text                        | fuzzy metadata match; body substring |
+
+```sh
+# Free text: fuzzy over ids/titles/tags/headings, grep-style body hits
+okf search --bundle ./company_knowledge "mileage"
+
+# Filters compose: stale, unreviewed concepts — an attention queue
+okf search --bundle ./company_knowledge "is:stale tier:unverified" --json
+
+# Pin staleness for deterministic output
+okf search --bundle ./company_knowledge "is:stale" --today 2026-12-01 --limit 50
+```
+
+Metadata hits print as `id [status] title` (heading hits indented beneath),
+body hits as `id:line  snippet…`, and `--json` emits
+`{ query, hits, body_hits }` for pipelines and agents.
+
 ### Link graph and discovery: links and graph
 
 ```sh
@@ -504,11 +687,10 @@ okf validate ./company_knowledge --json
 okf lint ./company_knowledge --json
 okf info ./company_knowledge --json
 okf trust ./company_knowledge --json
+okf search --bundle ./company_knowledge "is:stale tier:unverified" --json
 okf fmt ./company_knowledge --check --json
 okf diff ./bundle_v1 ./bundle_v2 --json
 ```
-
----
 
 ## CI/CD integration
 
@@ -561,10 +743,10 @@ Add `okf` or `okf-core` to your `Cargo.toml`:
 cargo add okf
 ```
 
-The `okf` crate's features let you take only what you need. `validator` and
-`studio` are on by default, as are the four language parsers behind the
-validator's syntax checks: `python`, `javascript`, `rust`, and `sql`. Each
-parser can be dropped independently. This matters under a strict dependency
+The `okf` crate's features let you take only what you need. `validator`,
+`studio`, and `site` are on by default, as are the four language parsers
+behind the validator's syntax checks: `python`, `javascript`, `rust`, and
+`sql`. Each parser can be dropped independently. This matters under a strict dependency
 or licence policy: the Python parser (`rustpython-parser`) depends on the
 LGPL-3.0-only `malachite` crates, which an allow-list policy such as
 `cargo deny` will reject. Conformance validation and linting need none of
@@ -572,7 +754,7 @@ the parsers, so a licence-clean dependency that still checks SQL is:
 
 ```toml
 [dependencies]
-okf = { version = "0.2", default-features = false, features = ["validator", "sql"] }
+okf = { version = "0.4", default-features = false, features = ["validator", "sql"] }
 ```
 
 Or, without any of the validator, `okf-core` alone for a zero-dependency
@@ -674,11 +856,12 @@ checked.
 This repository is structured as a multi-crate Rust workspace:
 
 | Crate | Description | Documentation |
-|-------|-------------|---------------|
+| [`okf-web`](https://crates.io/crates/okf-web) | The `okf site` static site generator: maud templates, pulldown-cmark rendering, Tailwind v4 styling, vendored mermaid.js diagrams, and vendored shiki code highlighting — a deployable HTML view of a bundle. | [![docs.rs](https://img.shields.io/docsrs/okf-web)](https://docs.rs/okf-web) |
 | [`okf`](https://crates.io/crates/okf) | CLI binary and re-exports of all core and validator APIs. | [![docs.rs](https://img.shields.io/docsrs/okf)](https://docs.rs/okf) |
 | [`okf-core`](https://crates.io/crates/okf-core) | Pure-Rust OKF engine (YAML subset parser, AST, link graphs, diff, fix engine). | [![docs.rs](https://img.shields.io/docsrs/okf-core)](https://docs.rs/okf-core) |
 | [`okf-validator`](https://crates.io/crates/okf-validator) | Conformance validator, multi-language syntax checker, and 13 opinionated linting rules. | [![docs.rs](https://img.shields.io/docsrs/okf-validator)](https://docs.rs/okf-validator) |
 | [`okf-studio`](https://crates.io/crates/okf-studio) | The `okf studio` interactive terminal UI: explorer, graph, mission control, computations playground, and live refactoring. | [![docs.rs](https://img.shields.io/docsrs/okf-studio)](https://docs.rs/okf-studio) |
+| [`okf-web`](https://crates.io/crates/okf-web) | The `okf site` static site generator: maud templates, pulldown-cmark rendering, Tailwind v4 styling, and vendored mermaid.js diagrams — a deployable HTML view of a bundle. | [![docs.rs](https://img.shields.io/docsrs/okf-web)](https://docs.rs/okf-web) |
 | [`cargo-okf`](https://crates.io/crates/cargo-okf) | Cargo plugin wrapper allowing `cargo okf <cmd>`. | [![docs.rs](https://img.shields.io/docsrs/cargo-okf)](https://docs.rs/cargo-okf) |
 
 ---

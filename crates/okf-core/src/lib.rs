@@ -109,6 +109,7 @@ pub mod markdown;
 pub mod provenance;
 pub mod refactor;
 pub mod scaffold;
+pub mod search;
 pub mod trust;
 pub mod yaml;
 
@@ -159,8 +160,8 @@ pub use links::{Citation, Link, LinkKind, ParseLinkKindError, field_path_candida
 pub use log::{Log, LogDay, LogEntry, append_log_entry};
 #[doc(inline)]
 pub use markdown::{
-    LinkRewriteAction, MarkdownHeading, extract_headings, heading_slug, matches_heading,
-    parse_heading_line, rewrite_markdown_links,
+    LinkRewriteAction, MarkdownHeading, SlugAllocator, expand_wikilinks, extract_headings,
+    heading_slug, matches_heading, parse_heading_line, rewrite_markdown_links,
 };
 #[doc(inline)]
 pub use provenance::{Attribution, ResourceKind, Source, UsageWindow};
@@ -174,6 +175,11 @@ pub use refactor::{
 #[doc(inline)]
 pub use scaffold::{
     BundleInitOptions, ConceptOptions, create_concept, default_author, init_bundle,
+};
+#[doc(inline)]
+pub use search::{
+    BodyHit, Filter, Query, SearchEntry, SearchHit, SearchIndex, fuzzy_match, search_bodies,
+    search_bodies_indexed,
 };
 #[doc(inline)]
 pub use trust::{Generated, ParseTrustTierError, Status, TrustTier, Verification};

@@ -7,7 +7,7 @@
 //! permissive-loading design.
 
 use crate::graph::GraphModel;
-use crate::search::{SearchEntry, SearchIndex};
+use crate::search::SearchIndex;
 use okf_core::log::{Log, LogEntry};
 use okf_core::{
     ActorKind, AttestedComputation, Bundle, BundleError, ComputationSource, ConceptId, Date,
@@ -223,7 +223,7 @@ impl Snapshot {
         let concept_meta = build_meta(&bundle, &validation, &lint, today);
         let tree = build_tree(&bundle);
         let graph = GraphModel::build(&bundle);
-        let search = build_search(&bundle, &concept_meta);
+        let search = SearchIndex::build(&bundle, Some(today));
         let (log_timeline, log_days) = build_log_views(&bundle);
         let stats = build_stats(&bundle, &concept_meta);
         let attention = build_attention(&bundle, &concept_meta);
@@ -433,39 +433,6 @@ fn build_tree(bundle: &Bundle) -> FileTree {
     FileTree {
         roots: finish(root, ""),
     }
-}
-
-fn build_search(bundle: &Bundle, meta: &HashMap<ConceptId, ConceptMeta>) -> SearchIndex {
-    let entries = bundle
-        .concepts()
-        .iter()
-        .map(|concept| {
-            let m = meta.get(&concept.id);
-            SearchEntry {
-                id: concept.id.clone(),
-                title: concept.display_title(),
-                description: concept
-                    .document
-                    .frontmatter
-                    .description()
-                    .map(std::borrow::Cow::into_owned)
-                    .unwrap_or_default(),
-                tags: concept.document.frontmatter.tags(),
-                headings: m
-                    .map(|m| m.headings.iter().map(|(_, t)| t.clone()).collect())
-                    .unwrap_or_default(),
-                type_: concept
-                    .type_()
-                    .map(std::borrow::Cow::into_owned)
-                    .unwrap_or_default(),
-                tier: concept.trust_tier(),
-                status: concept.status(),
-                stale: m.is_some_and(|m| m.stale),
-                broken: m.is_some_and(|m| m.broken_out > 0),
-            }
-        })
-        .collect();
-    SearchIndex { entries }
 }
 
 /// The two log-derived views: the per-date activity counts and the merged

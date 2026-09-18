@@ -20,10 +20,11 @@ clap = { workspace = true, optional = true }
 okf-core.workspace = true
 okf-studio = { workspace = true, optional = true }
 okf-validator = { workspace = true, optional = true }
+okf-web = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 [features]
-default = ["validator", "studio", "python", "javascript", "rust", "sql"]
+default = ["validator", "studio", "site", "python", "javascript", "rust", "sql"]
 # Conformance validation, multi-language syntax checking, and linting:
 # the validate, syntax, and lint modules, and the okf validate / okf lint
 # subcommands. On by default; opt out with default-features = false for a
@@ -32,16 +33,19 @@ validator = ["dep:okf-validator", "dep:serde_json", "dep:clap"]
 # The `okf studio` interactive TUI. On by default for the installed binary;
 # opt out with --no-default-features --features validator for a slim build.
 studio = ["validator", "dep:okf-studio"]
+# The `okf site` static site generator (okf-web: maud + pulldown-cmark,
+# vendored mermaid). On by default alongside studio.
+site = ["validator", "dep:okf-web"]
 # Third-party language parsers behind the validator's syntax checks, forwarded
-# to okf-validator (and okf-studio when it is enabled). Each implies
-# `validator`. All on by default; a consumer under a strict licence policy can
-# take `--no-default-features --features validator,sql` to keep conformance,
-# linting, and SQL checking while dropping rustpython-parser and its
-# LGPL-3.0-only `malachite` dependency tree.
-python = ["validator", "okf-validator/python", "okf-studio?/python"]
-javascript = ["validator", "okf-validator/javascript", "okf-studio?/javascript"]
-rust = ["validator", "okf-validator/rust", "okf-studio?/rust"]
-sql = ["validator", "okf-validator/sql", "okf-studio?/sql"]
+# to okf-validator (and okf-studio / okf-web when they are enabled). Each
+# implies `validator`. All on by default; a consumer under a strict licence
+# policy can take `--no-default-features --features validator,sql` to keep
+# conformance, linting, and SQL checking while dropping rustpython-parser and
+# its LGPL-3.0-only `malachite` dependency tree.
+python = ["validator", "okf-validator/python", "okf-studio?/python", "okf-web?/python"]
+javascript = ["validator", "okf-validator/javascript", "okf-studio?/javascript", "okf-web?/javascript"]
+rust = ["validator", "okf-validator/rust", "okf-studio?/rust", "okf-web?/rust"]
+sql = ["validator", "okf-validator/sql", "okf-studio?/sql", "okf-web?/sql"]
 
 # The lib target re-exports all of okf-core, so `cargo add okf` keeps working
 # as a library dependency (`use okf::Bundle;`) while `cargo install okf` still

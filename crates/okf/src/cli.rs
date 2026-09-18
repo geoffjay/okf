@@ -17,15 +17,16 @@
 //!   graph        [bundle]   Print the cross-link graph (--format text|mermaid|json, --json).
 //!   computations [bundle]   List Attested Computation contracts (--json).
 //!   diff         <a> <b>    OKF-semantics diff between two bundles (--json).
-//!   index        [bundle]   (Re)generate every index.md in a bundle (--json).
+//!   search       <query...> Search metadata and body text (--json, --today, --limit).
 //!   parse        <file>     Parse one concept document and print its structure (--json).
 //!   studio       [bundle]   Open the interactive terminal studio (--today, --tab, --no-watch).
+//!   site         [bundle]   Generate a static HTML site into ./site (--today, --out, --title, --theme, --scheme).
 //! ```
 
 #![warn(clippy::pedantic, clippy::nursery)]
 
 use crate::{
-    Bundle, BundleInitOptions, ConceptId, ConceptOptions, Date, Document, DocumentError,
+    Bundle, BundleInitOptions, Concept, ConceptId, ConceptOptions, Date, Document, DocumentError,
     FixOptions, Link, MergeOptions, MoveOptions, RemoveOptions, RenameSectionOptions, Report,
     Severity, SplitOptions, TrustTier, Value, bundle_diff, create_concept, init_bundle,
     lint_bundle_at, merge_concepts, move_concept, remediate_bundle, remediate_file, remove_concept,
@@ -103,6 +104,19 @@ fn parse_date(raw: &str) -> Result<Date, String> {
     Date::parse(raw).ok_or_else(|| format!("--today is not a YYYY-MM-DD date: {raw}"))
 }
 
+/// Parses `--scheme`: the appearance a generated site opens in.
+#[cfg(feature = "site")]
+fn parse_scheme(raw: &str) -> Result<okf_web::config::SchemePref, String> {
+    use okf_web::config::SchemePref;
+
+    match raw {
+        "auto" => Ok(SchemePref::Auto),
+        "light" => Ok(SchemePref::Light),
+        "dark" => Ok(SchemePref::Dark),
+        other => Err(format!("--scheme is auto, light, or dark: {other}")),
+    }
+}
+
 static CLI_VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     format!(
         "{} (OKF spec v{})",
@@ -162,11 +176,16 @@ pub enum Commands {
     Diff(DiffArgs),
     /// (Re)generate every index.md in the bundle (--json)
     Index(IndexArgs),
+    /// Search concept metadata and body text (--json, --today, --limit)
+    Search(SearchArgs),
     /// Parse one concept document and print its structure (--json)
     Parse(ParseArgs),
     /// Open the interactive terminal studio for a bundle
     #[cfg(feature = "studio")]
     Studio(StudioArgs),
+    /// Generate a static HTML site for a bundle (maud + vendored mermaid/shiki)
+    #[cfg(feature = "site")]
+    Site(SiteArgs),
 }
 
 #[derive(Args, Debug)]
@@ -334,6 +353,34 @@ pub struct LinksArgs {
     /// Include external links
     #[arg(short, long, visible_alias = "external")]
     pub all: bool,
+
+    /// Output results as JSON
+    #[arg(short, long)]
+    pub json: bool,
+
+    /// Output format (text or json)
+    #[arg(long, value_parser = ["text", "json"])]
+    pub format: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SearchArgs {
+    /// The search query: free text plus `#tag`, `type:`, `tier:`, `status:`,
+    /// `is:stale`, `is:broken` filters
+    #[arg(required = true, num_args = 1..)]
+    pub query: Vec<String>,
+
+    /// Bundle directory to search (defaults to current directory)
+    #[arg(long, default_value = ".")]
+    pub bundle: PathBuf,
+
+    /// Evaluate staleness (`is:stale`) against this date instead of today
+    #[arg(long, value_parser = parse_date)]
+    pub today: Option<Date>,
+
+    /// Maximum results per hit class (metadata and body)
+    #[arg(long, default_value = "20")]
+    pub limit: usize,
 
     /// Output results as JSON
     #[arg(short, long)]
@@ -695,6 +742,38 @@ pub struct StudioArgs {
     pub author: Option<String>,
 }
 
+#[cfg(feature = "site")]
+#[derive(Args, Debug)]
+pub struct SiteArgs {
+    /// Bundle directory to generate from (defaults to current directory)
+    #[arg(default_value = ".")]
+    pub bundle: PathBuf,
+
+    /// Evaluate staleness against this date instead of the system clock
+    #[arg(long, value_parser = parse_date)]
+    pub today: Option<Date>,
+
+    /// Output directory (defaults to `<bundle>/site`)
+    #[arg(long, value_name = "DIR")]
+    pub out: Option<PathBuf>,
+
+    /// Site title shown in the header (overrides `site.title` in
+    /// `.okf/config.yaml`; defaults to "okf site")
+    #[arg(long, value_name = "TITLE")]
+    pub title: Option<String>,
+
+    /// Theme family a first-time visitor sees, by id (overrides
+    /// `site.theme` in `.okf/config.yaml`; defaults to "default")
+    #[arg(long, value_name = "ID")]
+    pub theme: Option<String>,
+
+    /// Appearance a first-time visitor sees: auto, light, or dark
+    /// (overrides `site.scheme` in `.okf/config.yaml`; defaults to "auto",
+    /// the system preference)
+    #[arg(long, value_name = "SCHEME", value_parser = parse_scheme)]
+    pub scheme: Option<okf_web::config::SchemePref>,
+}
+
 /// Runs the `okf` CLI on `args` (the program name already stripped) and
 /// returns the process exit code.
 ///
@@ -727,6 +806,7 @@ pub fn run(args: &[String]) -> ExitCode {
         Commands::Fmt(ref a) => cmd_fmt(a),
         Commands::Info(ref a) => cmd_info(a),
         Commands::Trust(ref a) => cmd_trust(a),
+        Commands::Search(a) => cmd_search(&a),
         Commands::Links(ref a) => cmd_links(a),
         Commands::Graph(ref a) => cmd_graph(a),
         Commands::Computations(ref a) => cmd_computations(a),
@@ -735,6 +815,8 @@ pub fn run(args: &[String]) -> ExitCode {
         Commands::Parse(ref a) => cmd_parse(a),
         #[cfg(feature = "studio")]
         Commands::Studio(ref a) => cmd_studio(a),
+        #[cfg(feature = "site")]
+        Commands::Site(ref a) => cmd_site(a),
     };
 
     match result {
@@ -781,6 +863,72 @@ fn cmd_studio(args: &StudioArgs) -> Result<ExitCode, CliError> {
         author: args.author.clone(),
     })
     .map_err(|e| CliError::data(format!("studio failed: {e}")))
+}
+
+/// Generates the static site. The bundle is loaded once *before* okf-web
+/// runs so a missing or unreadable bundle fails early with the same
+/// well-coded exit as every other subcommand. Site never takes `--json`:
+/// like studio, it *is* the presentation. Per-bundle settings come from
+/// `.okf/config.yaml`, which okf-web reads itself; `--title`, `--theme`,
+/// and `--scheme` override it.
+#[cfg(feature = "site")]
+fn cmd_site(args: &SiteArgs) -> Result<ExitCode, CliError> {
+    let _ = load(&args.bundle)?;
+    let out_dir = args.out.clone().unwrap_or_else(|| args.bundle.join("site"));
+    let summary = okf_web::generate(okf_web::SiteOptions {
+        root: args.bundle.clone(),
+        out_dir: out_dir.clone(),
+        today: args.today,
+        title: args.title.clone(),
+        theme: args.theme.clone(),
+        scheme: args.scheme,
+    })
+    .map_err(|e| CliError::data(format!("site failed: {e}")))?;
+
+    println!(
+        "generated {} page(s) into {}",
+        summary.pages,
+        out_dir.display()
+    );
+    // Which config file the build read, and what it supplied: a config that
+    // silently did nothing (wrong bundle root, a key that set nothing) is
+    // otherwise indistinguishable from one that worked.
+    if let Some(path) = &summary.config {
+        if summary.config_settings.is_empty() {
+            println!("  read {} (no site settings)", path.display());
+        } else {
+            println!(
+                "  read {} ({})",
+                path.display(),
+                summary.config_settings.join(", ")
+            );
+        }
+    }
+    if summary.mermaid_pages > 0 {
+        println!(
+            "  {} diagram page(s); mermaid.js vendored under assets/",
+            summary.mermaid_pages
+        );
+    }
+    if summary.code_pages > 0 {
+        println!(
+            "  {} code page(s); shiki.js vendored under assets/",
+            summary.code_pages
+        );
+    }
+    for note in &summary.notes {
+        println!("  note: {note}");
+    }
+    if summary.config_settings.contains(&"title") && args.title.is_some() {
+        println!("  note: --title overrode `site.title`");
+    }
+    if summary.config_settings.contains(&"theme") && args.theme.is_some() {
+        println!("  note: --theme overrode `site.theme`");
+    }
+    if summary.config_settings.contains(&"scheme") && args.scheme.is_some() {
+        println!("  note: --scheme overrode `site.scheme`");
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 struct LoadedTarget {
@@ -1336,6 +1484,69 @@ fn cmd_index(args: &IndexArgs) -> Result<ExitCode, CliError> {
         println!("\n{} index file(s) regenerated.", written.len());
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_search(args: &SearchArgs) -> Result<ExitCode, CliError> {
+    let bundle = load(&args.bundle)?;
+    let today = args.today;
+    let query = args.query.join(" ");
+    let json = args.json || args.format.as_deref() == Some("json");
+    let limit = args.limit;
+
+    let index = crate::SearchIndex::build(&bundle, today);
+    let hits = index.search(&query, limit);
+    let body_hits = crate::search_bodies_indexed(&bundle, &index, &query, limit);
+
+    if json {
+        print_search_json(&query, &hits, &body_hits);
+    } else {
+        print_search_text(&bundle, &hits, &body_hits);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Text output: metadata hits first (the palette's row order), then body
+/// hits with line numbers, then a summary count.
+fn print_search_text(bundle: &Bundle, hits: &[crate::SearchHit], body_hits: &[crate::BodyHit]) {
+    for hit in hits {
+        let concept = bundle.get(&hit.id);
+        let status = concept.map_or(String::new(), |c| c.status().as_str().to_string());
+        if let Some(heading) = &hit.heading {
+            println!("  {} # {}", hit.id, heading);
+        } else {
+            let title = concept.map_or_else(|| hit.id.to_string(), Concept::display_title);
+            println!("{} [{}] {}", hit.id, status, title);
+        }
+    }
+    for hit in body_hits {
+        println!("{}:{}  {}", hit.id, hit.line, hit.snippet);
+    }
+    println!();
+    println!(
+        "{} metadata hit(s), {} body hit(s)",
+        hits.len(),
+        body_hits.len()
+    );
+}
+
+/// JSON output: mirrors `print_trust_json`'s hand-built `serde_json` shape.
+fn print_search_json(query: &str, hits: &[crate::SearchHit], body_hits: &[crate::BodyHit]) {
+    let val = serde_json::json!({
+        "query": query,
+        "hits": hits.iter().map(|h| serde_json::json!({
+            "id": h.id.to_string(),
+            "heading": h.heading,
+            "label": h.label,
+            "score": h.score,
+        })).collect::<Vec<_>>(),
+        "body_hits": body_hits.iter().map(|h| serde_json::json!({
+            "id": h.id.to_string(),
+            "line": h.line,
+            "snippet": h.snippet,
+            "start": h.start,
+        })).collect::<Vec<_>>(),
+    });
+    println!("{}", serde_json::to_string_pretty(&val).unwrap_or_default());
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

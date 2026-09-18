@@ -7,7 +7,7 @@
 //! the viewer can Tab-cycle and Enter-follow them.
 
 use crate::theme::{GLYPH_BROKEN, GLYPH_OK, Theme};
-use okf_core::markdown::parse_heading_line;
+use okf_core::markdown::{expand_wikilinks, parse_heading_line};
 use okf_core::{Link, LinkKind};
 use okf_validator::{Language, check_syntax};
 use ratatui::style::{Modifier, Style};
@@ -133,6 +133,11 @@ pub fn render_document(
     focused: Option<usize>,
 ) -> RenderedDoc {
     let width = usize::from(width.max(10));
+    // One syntax in, one syntax rendered: `[[target]]` wikilinks expand to
+    // standard links first, so the focus map carries them like any other
+    // link and Enter-follow resolves them (`App::follow_focused_link`
+    // matches an anchor against these headings' slugs).
+    let body = expand_wikilinks(body).0;
     let mut doc = RenderedDoc::default();
     let lines: Vec<&str> = body.lines().collect();
     let mut i = 0;

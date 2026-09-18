@@ -1,0 +1,966 @@
+/*
+ * Tailwind v4 source for the okf-web static site — the ONLY hand-authored
+ * stylesheet. `cargo xtask tailwind` compiles it with the Tailwind v4
+ * standalone CLI (no Node) into `site.css`, which is committed and
+ * `include_str!`'d by `render.rs`; the generator itself needs no toolchain.
+ *
+ * `source(none)` turns off Tailwind's file scanning: every class the templates
+ * use is defined here via `@apply`, so the output is deterministic and carries
+ * no utilities beyond the ones these components reference. Add styling here and
+ * regenerate — never hand-edit `site.css`, and never rely on a utility class in
+ * a template that this file does not `@apply`.
+ */
+@import "tailwindcss" source(none);
+
+/*
+ * Palette and surface tokens as plain custom properties (not `@theme`, which
+ * tree-shakes unused values under `source(none)`). Surfaces, ink, and edges
+ * come from Tailwind's `mist` palette (v4.2+): mist-100 surface in light
+ * mode, mist-900 in dark. Accent colors (links, trust tiers, statuses,
+ * severities) use the standard Tailwind scales and flip to lighter steps in
+ * dark mode for contrast.
+ *
+ * A theme is a set of token *values*, never a set of rules, which is what
+ * lets a visitor switch one at runtime against this precompiled stylesheet.
+ * Two independent axes, both applied to `<html>` by the theme bootstrap
+ * before first paint:
+ *
+ * - `data-scheme` (`light`/`dark`, absent = follow the system) is the
+ *   appearance. It selects the base palette and everything else that is
+ *   really a light/dark question: `color-scheme`, which shiki variable
+ *   resolves, which mermaid mode renders, and which glyph the theme button
+ *   shows.
+ * - `data-theme` (a family id, absent = the built-in `default` family)
+ *   layers token overrides for *that appearance*. A family has up to two
+ *   variants, so every block below is scoped to one scheme — explicitly
+ *   (`[data-scheme="dark"]`) and through the media query for the
+ *   attribute-less `auto` case. A variant a family does not define is
+ *   simply absent, and the base palette shows through: `sepia` is
+ *   light-only, so choosing it and then switching to dark gives the
+ *   standard dark palette.
+ *
+ * Family blocks outrank the base blocks by specificity (0-3-0 against
+ * 0-2-0) whatever their order, and a bundle's own families arrive in a
+ * generated `assets/theme.css` linked after this stylesheet.
+ *
+ * With neither attribute — no JavaScript, no stored choice, no pinned
+ * default — this is exactly a light stylesheet with a
+ * `prefers-color-scheme` override, which is what the site was before
+ * themes existed.
+ */
+:root {
+  /* Light values are the defaults; dark arrives through the media query
+     below (system preference) or `[data-scheme="dark"]` (explicit choice). */
+  color-scheme: light;
+
+  /*
+   * Typography tokens. Every font in the site resolves through these two, so
+   * one override changes the whole face: `okf site` writes a generated
+   * `assets/fonts.css` from a bundle's `.okf/config.yaml` and links it after
+   * this stylesheet, where its `:root` block wins the cascade tie. Both
+   * defaults restate today's computed values — system sans on `body`, and
+   * for code the same stack Tailwind's preflight applies through
+   * `--default-mono-font-family` — so the tokens change nothing on their own.
+   * Themes never touch them: the two token sets are disjoint by validation.
+   */
+  --font-body: system-ui, sans-serif;
+  --font-code:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
+  --surface: oklch(96.3% 0.002 197.1); /* mist-100 */
+  --ink: oklch(14.8% 0.004 228.8); /* mist-950 */
+  --edge: oklch(87.2% 0.007 219.6); /* mist-300 */
+  --link: var(--color-violet-400);
+  --shadow: oklch(0% 0 0 / 0.15);
+
+  --panel-bg: oklch(98.7% 0.002 197.1); /* mist-50 */
+  --code-bg: oklch(92.5% 0.005 214.3); /* mist-200 */
+  /* Diagram canvas matches the panel background (the frontmatter card). */
+  --mermaid-bg: oklch(98.7% 0.002 197.1); /* mist-50, matches --panel-bg */
+
+  --tier-unverified: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --tier-machine: oklch(54.1% 0.281 293.009); /* violet-600 */
+  --tier-human: oklch(52.7% 0.154 150.069); /* green-700 */
+  --status-draft: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --status-stable: oklch(52.7% 0.154 150.069); /* green-700 */
+  --status-deprecated: oklch(50.5% 0.213 27.518); /* red-700 */
+  --status-other: oklch(45% 0.017 213.2); /* mist-600 */
+  --sev-info: oklch(45% 0.017 213.2); /* mist-600 */
+  --sev-warning: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --sev-error: oklch(50.5% 0.213 27.518); /* red-700 */
+  --danger: oklch(50.5% 0.213 27.518); /* red-700 */
+}
+
+/* The dark base, twice: once for the system preference when the visitor has
+   expressed no choice, once for the choice itself. The duplication is the
+   price of a media query that cannot be folded into a selector list. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme]) {
+    color-scheme: dark;
+    --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
+    --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
+    --edge: oklch(37.8% 0.015 216); /* mist-700 */
+    --link: var(--color-violet-300);
+    --shadow: oklch(0% 0 0 / 0.5);
+    --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+    --tier-unverified: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --tier-machine: oklch(70.2% 0.183 293.541); /* violet-400 */
+    --tier-human: oklch(72.3% 0.219 149.579); /* green-500 */
+    --status-draft: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --status-stable: oklch(72.3% 0.219 149.579); /* green-500 */
+    --status-deprecated: oklch(63.7% 0.237 25.331); /* red-500 */
+    --status-other: oklch(72.3% 0.014 214.4); /* mist-400 */
+    --sev-info: oklch(72.3% 0.014 214.4); /* mist-400 */
+    --sev-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
+    --danger: oklch(63.7% 0.237 25.331); /* red-500 */
+  }
+}
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+  --surface: oklch(21.8% 0.008 223.9); /* mist-900 */
+  --ink: oklch(98.7% 0.002 197.1); /* mist-50 */
+  --edge: oklch(37.8% 0.015 216); /* mist-700 */
+  --link: var(--color-violet-300);
+  --shadow: oklch(0% 0 0 / 0.5);
+  --panel-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --code-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --mermaid-bg: oklch(27.5% 0.011 216.9); /* mist-800 */
+  --tier-unverified: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --tier-machine: oklch(70.2% 0.183 293.541); /* violet-400 */
+  --tier-human: oklch(72.3% 0.219 149.579); /* green-500 */
+  --status-draft: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --status-stable: oklch(72.3% 0.219 149.579); /* green-500 */
+  --status-deprecated: oklch(63.7% 0.237 25.331); /* red-500 */
+  --status-other: oklch(72.3% 0.014 214.4); /* mist-400 */
+  --sev-info: oklch(72.3% 0.014 214.4); /* mist-400 */
+  --sev-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --sev-error: oklch(63.7% 0.237 25.331); /* red-500 */
+  --danger: oklch(63.7% 0.237 25.331); /* red-500 */
+}
+:root[data-scheme="light"] {
+  color-scheme: light;
+}
+
+/*
+ * Built-in families. Each variant is written twice — once for the explicit
+ * appearance, once for the attribute-less `auto` case behind the matching
+ * media query — because a media query cannot be folded into a selector
+ * list, the same duplication the dark base above pays. A family overrides
+ * only the tokens it changes; the base block supplies the rest, which is
+ * also what makes the shiki, mermaid, and theme-glyph rules below correct
+ * for a palette they have never heard of.
+ *
+ * `BUILTIN_THEMES` in `render.rs` names the same ids and the same variants,
+ * and a unit test there asserts every one still has a block here.
+ */
+
+/* sepia — warm paper for long reading, light only: choosing it and then
+   switching to dark falls through to the standard dark palette, which is
+   the family fallback rule working as intended. The amber and green accents
+   drop a step: on a warm ground the light base's 700s measure 4.30 and 4.21
+   against the surface, just under AA for the badge text they color, and the
+   800s restore it at 6.07 and 6.04. */
+:root[data-theme="sepia"][data-scheme="light"] {
+  --surface: oklch(94.5% 0.018 88);
+  --ink: oklch(25% 0.025 60);
+  --edge: oklch(85% 0.028 82);
+  --link: oklch(46% 0.13 42);
+  --shadow: oklch(35% 0.05 70 / 0.18);
+  --panel-bg: oklch(97% 0.014 88);
+  --code-bg: oklch(90.5% 0.024 86);
+  --mermaid-bg: oklch(97% 0.014 88);
+  --tier-unverified: oklch(47.3% 0.137 46.201); /* amber-800 */
+  --tier-human: oklch(44.8% 0.119 151.328); /* green-800 */
+  --status-draft: oklch(47.3% 0.137 46.201); /* amber-800 */
+  --status-stable: oklch(44.8% 0.119 151.328); /* green-800 */
+  --status-other: oklch(42% 0.02 70);
+  --sev-info: oklch(42% 0.02 70);
+  --sev-warning: oklch(47.3% 0.137 46.201); /* amber-800 */
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="sepia"]:not([data-scheme]) {
+    --surface: oklch(94.5% 0.018 88);
+    --ink: oklch(25% 0.025 60);
+    --edge: oklch(85% 0.028 82);
+    --link: oklch(46% 0.13 42);
+    --shadow: oklch(35% 0.05 70 / 0.18);
+    --panel-bg: oklch(97% 0.014 88);
+    --code-bg: oklch(90.5% 0.024 86);
+    --mermaid-bg: oklch(97% 0.014 88);
+    --tier-unverified: oklch(47.3% 0.137 46.201); /* amber-800 */
+    --tier-human: oklch(44.8% 0.119 151.328); /* green-800 */
+    --status-draft: oklch(47.3% 0.137 46.201); /* amber-800 */
+    --status-stable: oklch(44.8% 0.119 151.328); /* green-800 */
+    --status-other: oklch(42% 0.02 70);
+    --sev-info: oklch(42% 0.02 70);
+    --sev-warning: oklch(47.3% 0.137 46.201); /* amber-800 */
+  }
+}
+
+/* contrast — maximum separation, both appearances: pure ground against pure
+   ink, with badge accents pushed to the scale ends (300s on black, 900s on
+   white) so every one of them clears WCAG AAA. An accessibility theme that
+   only worked in the dark would be a strange thing to ship. */
+:root[data-theme="contrast"][data-scheme="light"] {
+  --surface: oklch(100% 0 0);
+  --ink: oklch(0% 0 0);
+  --edge: oklch(45% 0 0);
+  --link: oklch(38.1% 0.176 304.987); /* violet-900 */
+  --shadow: oklch(0% 0 0 / 0.35);
+  --panel-bg: oklch(97% 0 0);
+  --code-bg: oklch(94% 0 0);
+  --mermaid-bg: oklch(97% 0 0);
+  --tier-unverified: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --tier-machine: oklch(38.1% 0.176 304.987); /* violet-900 */
+  --tier-human: oklch(39.3% 0.095 152.535); /* green-900 */
+  --status-draft: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --status-stable: oklch(39.3% 0.095 152.535); /* green-900 */
+  --status-deprecated: oklch(39.6% 0.141 25.723); /* red-900 */
+  --status-other: oklch(25% 0 0);
+  --sev-info: oklch(25% 0 0);
+  --sev-warning: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --sev-error: oklch(39.6% 0.141 25.723); /* red-900 */
+  --danger: oklch(39.6% 0.141 25.723); /* red-900 */
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="contrast"]:not([data-scheme]) {
+    --surface: oklch(100% 0 0);
+    --ink: oklch(0% 0 0);
+    --edge: oklch(45% 0 0);
+    --link: oklch(38.1% 0.176 304.987); /* violet-900 */
+    --shadow: oklch(0% 0 0 / 0.35);
+    --panel-bg: oklch(97% 0 0);
+    --code-bg: oklch(94% 0 0);
+    --mermaid-bg: oklch(97% 0 0);
+    --tier-unverified: oklch(41.4% 0.112 45.904); /* amber-900 */
+    --tier-machine: oklch(38.1% 0.176 304.987); /* violet-900 */
+    --tier-human: oklch(39.3% 0.095 152.535); /* green-900 */
+    --status-draft: oklch(41.4% 0.112 45.904); /* amber-900 */
+    --status-stable: oklch(39.3% 0.095 152.535); /* green-900 */
+    --status-deprecated: oklch(39.6% 0.141 25.723); /* red-900 */
+    --status-other: oklch(25% 0 0);
+    --sev-info: oklch(25% 0 0);
+    --sev-warning: oklch(41.4% 0.112 45.904); /* amber-900 */
+    --sev-error: oklch(39.6% 0.141 25.723); /* red-900 */
+    --danger: oklch(39.6% 0.141 25.723); /* red-900 */
+  }
+}
+:root[data-theme="contrast"][data-scheme="dark"] {
+  --surface: oklch(0% 0 0);
+  --ink: oklch(100% 0 0);
+  --edge: oklch(65% 0 0);
+  --link: oklch(85% 0.12 293.5);
+  --shadow: oklch(0% 0 0 / 0.8);
+  --panel-bg: oklch(15% 0 0);
+  --code-bg: oklch(18% 0 0);
+  --mermaid-bg: oklch(15% 0 0);
+  --tier-unverified: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --tier-machine: oklch(81.1% 0.111 293.571); /* violet-300 */
+  --tier-human: oklch(87.1% 0.15 154.449); /* green-300 */
+  --status-draft: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --status-stable: oklch(87.1% 0.15 154.449); /* green-300 */
+  --status-deprecated: oklch(80.8% 0.114 19.571); /* red-300 */
+  --status-other: oklch(92% 0 0);
+  --sev-info: oklch(92% 0 0);
+  --sev-warning: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --sev-error: oklch(80.8% 0.114 19.571); /* red-300 */
+  --danger: oklch(80.8% 0.114 19.571); /* red-300 */
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="contrast"]:not([data-scheme]) {
+    --surface: oklch(0% 0 0);
+    --ink: oklch(100% 0 0);
+    --edge: oklch(65% 0 0);
+    --link: oklch(85% 0.12 293.5);
+    --shadow: oklch(0% 0 0 / 0.8);
+    --panel-bg: oklch(15% 0 0);
+    --code-bg: oklch(18% 0 0);
+    --mermaid-bg: oklch(15% 0 0);
+    --tier-unverified: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --tier-machine: oklch(81.1% 0.111 293.571); /* violet-300 */
+    --tier-human: oklch(87.1% 0.15 154.449); /* green-300 */
+    --status-draft: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --status-stable: oklch(87.1% 0.15 154.449); /* green-300 */
+    --status-deprecated: oklch(80.8% 0.114 19.571); /* red-300 */
+    --status-other: oklch(92% 0 0);
+    --sev-info: oklch(92% 0 0);
+    --sev-warning: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --sev-error: oklch(80.8% 0.114 19.571); /* red-300 */
+    --danger: oklch(80.8% 0.114 19.571); /* red-300 */
+  }
+}
+
+@layer base {
+  body {
+    @apply m-0;
+    /* Split out of the `font:` shorthand: a `var()` that fails to substitute
+       invalidates its whole declaration at computed-value time, which would
+       take the size and line height down with the family. */
+    font-size: 16px;
+    line-height: 1.6;
+    font-family: var(--font-body);
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  a {
+    color: var(--link);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.25;
+  }
+
+  code {
+    font-family: var(--font-code);
+    background: var(--code-bg);
+    border-radius: 3px;
+    padding: 0.1em 0.3em;
+  }
+
+  pre {
+    @apply overflow-x-auto;
+    font-family: var(--font-code);
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+  }
+
+  /*
+   * Shiki highlight: the vendored bundle emits token colors as
+   * --shiki-light/--shiki-dark CSS variables (defaultColor: false), so
+   * resolving them here is the whole code-color story — a theme change
+   * costs no re-render. Code colors ride the light/dark axis only, so the
+   * ladder keys on `data-scheme` and every palette, built-in or bundle,
+   * is covered without a rule of its own. .shiki lives on the <pre> the
+   * boot script swapped in; inline <code> never carries it.
+   */
+  .shiki,
+  .shiki span {
+    color: var(--shiki-light);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-scheme]) .shiki,
+    :root:not([data-scheme]) .shiki span {
+      color: var(--shiki-dark);
+    }
+  }
+  :root[data-scheme="dark"] .shiki,
+  :root[data-scheme="dark"] .shiki span {
+    color: var(--shiki-dark);
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border: 1px solid var(--edge);
+    padding: 0.25rem 0.6rem;
+  }
+
+  /*
+   * Markdown prose base: body copy slightly smaller, muted, and relaxed
+   * (element-level overrides come from the `md-*` component classes).
+   */
+  article {
+    @apply text-[0.9375rem] leading-relaxed text-[color:var(--ink)]/85;
+  }
+}
+
+
+/*
+ * Markdown element classes, emitted by okf-web's classed-HTML writer on
+ * every rendered markdown element (`md-*`). Deliberately strong
+ * heading/body hierarchy — body copy slightly smaller, muted, and relaxed;
+ * headings step up sharply in size and weight with generous spacing.
+ */
+@layer components {
+  .md-p {
+    @apply my-3.5;
+  }
+  .md-h1 {
+    @apply mt-8 mb-3 text-3xl font-bold;
+  }
+  .md-h2 {
+    @apply mt-7 mb-2.5 text-2xl font-bold;
+  }
+  .md-h3 {
+    @apply mt-6 mb-2 text-xl font-semibold;
+  }
+  .md-h4,
+  .md-h5,
+  .md-h6 {
+    @apply mt-5 mb-1.5 text-lg font-semibold;
+  }
+  .md-list {
+    @apply my-3.5 list-disc pl-6;
+  }
+  ol.md-list {
+    @apply list-decimal;
+  }
+  .md-li {
+    @apply my-1;
+  }
+  .md-a {
+    @apply underline decoration-[color:var(--link)]/45 underline-offset-2;
+  }
+  .md-a:hover {
+    @apply decoration-[color:var(--link)];
+  }
+  .md-quote {
+    @apply my-5 border-l-[3px] border-[color:var(--edge)] py-2 pl-5 italic opacity-85;
+  }
+  .md-hr {
+    @apply my-8 border-t border-[color:var(--edge)];
+  }
+  .md-img {
+    @apply max-w-full;
+  }
+  .md-strong {
+    @apply font-bold text-[color:var(--ink)];
+  }
+  .md-em {
+    @apply italic;
+  }
+
+  /* Citation number at the start of a footnote body: a link back to its
+     reference, styled as a small superscript number rather than body copy. */
+  .md-footnote .md-footnote-backref {
+    @apply no-underline font-semibold;
+    color: var(--link);
+  }
+  /* The body is a single markdown paragraph; drop its block margins so the
+     number and the text share one line. */
+  .md-footnote .md-p {
+    @apply my-0 inline;
+  }
+  .md-del {
+    @apply line-through;
+  }
+  .md-code {
+    @apply text-[0.9em];
+  }
+  /* A code block is a card — the same recipe `pre.mermaid` uses below:
+     bordered, rounded, padded, with its own surface, so preformatted
+     content reads as a block instead of loose monospace prose. The surface
+     is the inline-code token, so inline and block code agree. */
+  .md-pre {
+    @apply overflow-x-auto rounded-lg border border-[color:var(--edge)] p-4 my-4;
+    background: var(--code-bg);
+  }
+  /* Shiki's highlighted HTML replaces the whole `<pre>`, and its `<code>`
+     carries no `md-code` class — size on the block instead so a block does
+     not grow when the highlight swaps in. */
+  .md-pre code {
+    @apply text-[0.9em];
+  }
+  .md-table {
+    @apply my-4 border-collapse;
+  }
+  .md-th {
+    @apply border border-[color:var(--edge)] px-2.5 py-1 text-left font-semibold;
+  }
+  .md-td {
+    @apply border border-[color:var(--edge)] px-2.5 py-1;
+  }
+  .md-footnote {
+    @apply text-sm opacity-85;
+  }
+  .md-footnote-ref,
+  .md-footnote-label {
+    @apply text-sm;
+  }
+  .md-task {
+    @apply mr-1;
+  }
+  .md-br {
+    @apply block;
+  }
+
+
+  .site-header {
+    @apply fixed inset-x-0 top-0 z-50 flex items-center gap-3 px-4 py-2;
+    height: 4rem;
+    border-bottom: 1px solid var(--edge);
+    background: var(--surface);
+  }
+
+  /* Visually-hidden checkboxes that drive the two nav regimes; their labels
+     are the visible hamburgers. sr-only keeps them keyboard-accessible. */
+  .nav-toggle-input,
+  .nav-drawer-input {
+    @apply sr-only;
+  }
+
+  .site-header .menu-btn {
+    @apply flex shrink-0 cursor-pointer items-center justify-center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .site-header .menu-btn:hover {
+    background: var(--panel-bg);
+  }
+
+  .site-header .site-name {
+    @apply truncate font-bold;
+  }
+
+  .site-header .site-search {
+    @apply relative ml-auto;
+  }
+  .site-header .site-search input {
+    @apply w-48 rounded-md px-2 py-1;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    color: var(--ink);
+  }
+  .site-header .site-search input::placeholder {
+    opacity: 0.6;
+  }
+  .site-header .site-search input:focus {
+    @apply w-64;
+    border-color: var(--link);
+    outline: none;
+  }
+  /* The results dropdown: absolutely positioned under the input, panel
+     background and edge from the theme variables so light/dark both work. */
+  .site-search-results {
+    @apply absolute right-0 z-50 mt-1 max-h-96 w-[24rem] max-w-[90vw] overflow-y-auto rounded-md py-1;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 30px var(--shadow);
+  }
+  .site-search-results .search-row {
+    @apply block truncate px-3 py-1 text-sm;
+    color: var(--ink);
+  }
+  .site-search-results .search-row:hover {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+  .site-search-results .search-row.selected,
+  .site-search-results .search-row.selected:hover {
+    background: color-mix(in oklab, var(--ink) 15%, transparent);
+  }
+  .site-search-results .search-row.body {
+    @apply whitespace-nowrap;
+    opacity: 0.85;
+  }
+
+  /* Theme picker. The button is styled like the hamburger and shows the
+     glyph for the *resolved* scheme — sun in dark (click for light), moon in
+     light — keyed on `data-scheme`, so a palette the stylesheet has never
+     heard of still gets the right glyph. The panel under it lists the
+     catalog; `aria-checked` is the selection state and the tick is drawn
+     from it, so the accessible state cannot drift from the rendered one. */
+  .site-header .theme-picker {
+    @apply relative shrink-0;
+  }
+  .site-header .theme-btn {
+    @apply flex shrink-0 cursor-pointer items-center justify-center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .site-header .theme-btn:hover {
+    background: var(--panel-bg);
+  }
+  .site-header .theme-btn .icon-sun {
+    @apply hidden;
+  }
+  :root:not([data-scheme]) .site-header .theme-btn .icon-moon {
+    @apply hidden;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-scheme]) .site-header .theme-btn .icon-sun {
+      @apply block;
+    }
+    :root:not([data-scheme]) .site-header .theme-btn .icon-moon {
+      @apply hidden;
+    }
+  }
+  :root[data-scheme="dark"] .site-header .theme-btn .icon-sun {
+    @apply block;
+  }
+  :root[data-scheme="dark"] .site-header .theme-btn .icon-moon {
+    @apply hidden;
+  }
+
+  /* The menu holds two radio groups — the appearance axis and the theme
+     axis — so it is a <div> of labelled <ul>s rather than one list. */
+  .theme-menu {
+    @apply absolute right-0 z-50 mt-1 rounded-md p-1;
+    min-width: 11rem;
+    border: 1px solid var(--edge);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 30px var(--shadow);
+  }
+  .theme-menu[hidden] {
+    @apply hidden;
+  }
+  .theme-menu ul {
+    @apply m-0 list-none p-0;
+  }
+  .theme-menu .theme-group {
+    @apply px-2 pt-1 pb-0.5 text-xs font-semibold tracking-wide uppercase;
+    margin: 0;
+    opacity: 0.6;
+  }
+  .theme-menu .theme-group + ul {
+    @apply mb-1;
+  }
+  .theme-menu .theme-item {
+    @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-sm;
+    border: 0;
+    background: none;
+    color: var(--ink);
+  }
+  /* The tick occupies its cell whether or not it is shown, so labels do not
+     shift when the selection moves. */
+  .theme-menu .theme-item::before {
+    @apply w-3 text-center;
+    content: "✓";
+    opacity: 0;
+  }
+  .theme-menu .theme-item[aria-checked="true"] {
+    color: var(--link);
+  }
+  .theme-menu .theme-item[aria-checked="true"]::before {
+    opacity: 1;
+  }
+  /* Single-variant families say so: the other appearance falls through to
+     the base palette, which is a rule worth reading, not a bug. */
+  .theme-menu .theme-item .theme-variant {
+    @apply ml-auto pl-3 text-xs;
+    color: var(--ink);
+    opacity: 0.55;
+  }
+  .theme-menu .theme-item:hover,
+  .theme-menu .theme-item:focus-visible {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+    outline: none;
+  }
+
+  .layout {
+    @apply grid pt-16;
+    grid-template-columns: 320px 1fr;
+    min-height: calc(100vh - 4rem);
+  }
+
+  .tree {
+    @apply sticky top-16 overflow-y-auto p-4 text-sm;
+    max-height: calc(100vh - 4rem);
+    border-right: 1px solid var(--edge);
+
+    .special a,
+    li a {
+      @apply block no-underline;
+      /* Inactive items are a muted ink — mixing toward the surface dims them
+         (darker in dark mode, lighter in light mode). The active page is full
+         ink (brightest/lightest), and hovering brightens toward it. Text is
+         body ink, never link blue; roomy vertical spacing. */
+      color: color-mix(in oklab, var(--ink) 75%, var(--surface));
+      padding: 0.4rem 0;
+    }
+    .special a:hover,
+    li a:hover,
+    .special a.active,
+    li a.active {
+      color: var(--ink);
+    }
+
+    /* The left rule lives only on nested items; the top-level entries
+       (Dashboard, Graph, and the root concept/directory links) sit flush with
+       no border. Thin/faint when inactive, thick full-ink when active, and
+       lightened on hover. */
+    ul ul a {
+      border-left: 2px solid var(--edge);
+      padding-left: 0.75rem;
+    }
+    ul ul a:hover {
+      border-left-color: color-mix(in oklab, var(--ink) 50%, var(--edge));
+    }
+    ul ul a.active {
+      border-left-width: 2px;
+      border-left-color: var(--ink);
+      padding-left: calc(0.75rem - 1px); /* absorb the +1px border so text stays put */
+    }
+    /* Nesting depth is visible: every submenu below the first steps right
+       by one rule-to-label gap and carries its ancestor's rule. A level's
+       own rule is per-row (the `a` above), so it only spans that level's
+       rows — the rule beside a *sub*-submenu has to come from the nested
+       `ul` itself, which also keeps the ancestor rule unbroken past the
+       rows it contains. Border plus indent compound with depth, landing
+       each level's rule exactly where its parent's label starts. */
+    ul ul ul {
+      border-left: 2px solid var(--edge);
+      padding-left: 0.75rem;
+    }
+    /* Submenu heading row: the directory link, then its collapse toggle
+       pinned to the far right. `aria-expanded` on the toggle carries the
+       whole collapse state — the caret's direction and the submenu's
+       visibility both derive from it, so the accessible state cannot drift
+       from the rendered one. Pages ship expanded; the nav boot scripts
+       apply the persisted closed set (pre-paint as an injected style, then
+       as aria state on the toggles). */
+    .dir-row {
+      @apply flex items-center gap-1;
+    }
+    .dir-row > .dir {
+      /* Ellipsis instead of wrapping under the caret. */
+      @apply min-w-0 flex-1 truncate;
+    }
+    .dir-toggle {
+      @apply flex shrink-0 cursor-pointer items-center justify-center rounded;
+      width: 1.25rem;
+      height: 1.25rem;
+      /* Dimmer than the row's label so it reads as an affordance. */
+      color: color-mix(in oklab, var(--ink) 55%, var(--surface));
+    }
+    .dir-toggle:hover {
+      color: var(--ink);
+      background: color-mix(in oklab, var(--ink) 8%, transparent);
+    }
+    /* Caret down while open, a quarter turn counter-clockwise (pointing
+       right) while closed. */
+    .dir-caret {
+      transition: transform 120ms ease;
+    }
+    .dir-toggle[aria-expanded="false"] .dir-caret {
+      transform: rotate(-90deg);
+    }
+    li:has(> .dir-row > .dir-toggle[aria-expanded="false"]) > ul {
+      @apply hidden;
+    }
+    li {
+      @apply list-none;
+    }
+    ul {
+      @apply m-0;
+    }
+    & > ul {
+      @apply pl-0;
+    }
+  }
+
+  /* Two nav regimes, split at 50rem. Wide: the tree is a grid column the
+     hamburger collapses, and the choice persists — `html.nav-hidden` is the
+     pre-paint form of the checked box, applied by the nav boot/toggle
+     scripts. Narrow: there is no room for a column, so the tree becomes an
+     overlay drawer driven by its own checkbox, closed again on every load
+     (a persisted-open drawer would bury the page it belongs to) and immune
+     to the wide regime's persisted collapse, whose rules live in the other
+     block. Each regime displays one hamburger and keeps the other's
+     checkbox out of the tab order. Both rely on the base `.tree` and
+     `.layout` rules above, so they must stay below them. */
+  @media (width > 50rem) {
+    .nav-drawer-input,
+    .site-header .menu-btn[for="nav-drawer"],
+    .nav-scrim {
+      @apply hidden;
+    }
+    body:has(.nav-toggle-input:checked) .tree,
+    html.nav-hidden .tree {
+      @apply hidden;
+    }
+    body:has(.nav-toggle-input:checked) .layout,
+    html.nav-hidden .layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (width <= 50rem) {
+    .nav-toggle-input,
+    .site-header .menu-btn[for="nav-toggle"] {
+      @apply hidden;
+    }
+    /* The tree is out of flow here, so the content takes the whole grid. */
+    .layout {
+      grid-template-columns: 1fr;
+    }
+    .tree {
+      @apply fixed top-16 bottom-0 left-0 z-40;
+      width: min(320px, 85vw);
+      background: var(--surface);
+      box-shadow: 0 10px 30px var(--shadow);
+      /* Parked off the left edge. `visibility` is what keeps the closed
+         drawer out of the tab order and the accessibility tree; it is
+         discrete, so the transition holds it visible until the slide-out
+         finishes. */
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition:
+        transform 160ms ease,
+        visibility 160ms;
+    }
+    .nav-scrim {
+      @apply fixed inset-0 z-30 block cursor-pointer;
+      background: var(--shadow);
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity 160ms ease,
+        visibility 160ms;
+    }
+    body:has(.nav-drawer-input:checked) .tree {
+      transform: none;
+      visibility: visible;
+    }
+    body:has(.nav-drawer-input:checked) .nav-scrim {
+      opacity: 1;
+      visibility: visible;
+    }
+    /* The open drawer scrolls; the page behind it stays where it was. */
+    body:has(.nav-drawer-input:checked) {
+      @apply overflow-hidden;
+    }
+  }
+
+  main {
+    /* Centered in the content column so collapsing the nav doesn't shove
+       the page left — the column grows and the content stays centered. */
+    @apply mx-auto min-w-0;
+    padding: 2rem 4rem;
+    max-width: 80rem;
+    width: 100%;
+  }
+  main > h1 {
+    @apply text-3xl font-bold;
+    margin: 0 0 0.5rem;
+  }
+
+  .panel {
+    @apply rounded-lg;
+    border: 1px solid var(--edge);
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    background: var(--panel-bg);
+
+    h3 {
+      @apply uppercase;
+      margin: 0.25rem 0 0.5rem;
+      font-size: 0.95em;
+      letter-spacing: 0.04em;
+      opacity: 0.75;
+    }
+  }
+
+  .meta-grid {
+    @apply m-0 grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.15rem 1rem;
+
+    dt {
+      @apply font-semibold;
+      opacity: 0.8;
+    }
+    dd {
+      @apply m-0;
+    }
+  }
+
+  .badge {
+    /* Soft-filled badge: a tinted background, a subtle border, and strong
+       text, all derived from one --badge-color so each variant only sets that
+       single token. Defaults to neutral ink, which renders plain tags gray. */
+    --badge-color: var(--ink);
+    @apply inline-block whitespace-nowrap rounded text-xs font-medium;
+    padding: 0.125rem 0.375rem; /* py-0.5 px-1.5 */
+    color: var(--badge-color);
+    /* --surface first so the auto-generated fallback (for browsers without
+       color-mix) is the readable surface color, not the badge color. */
+    background: color-mix(in oklab, var(--surface) 88%, var(--badge-color));
+    border: 1px solid color-mix(in oklab, var(--surface) 68%, var(--badge-color));
+  }
+  .badge.stale {
+    --badge-color: var(--danger);
+  }
+  .badge.fresh {
+    --badge-color: var(--status-stable);
+  }
+  .badge.tier-unverified {
+    --badge-color: var(--tier-unverified);
+  }
+  .badge.tier-machine {
+    --badge-color: var(--tier-machine);
+  }
+  .badge.tier-human {
+    --badge-color: var(--tier-human);
+  }
+  .badge.status-draft {
+    --badge-color: var(--status-draft);
+  }
+  .badge.status-stable {
+    --badge-color: var(--status-stable);
+  }
+  .badge.status-deprecated {
+    --badge-color: var(--status-deprecated);
+  }
+  .badge.status-other {
+    --badge-color: var(--status-other);
+  }
+  .badge.sev-info {
+    --badge-color: var(--sev-info);
+  }
+  .badge.sev-warning {
+    --badge-color: var(--sev-warning);
+  }
+  .badge.sev-error {
+    --badge-color: var(--sev-error);
+  }
+
+  .broken-link {
+    color: var(--danger);
+    text-decoration: line-through;
+  }
+
+  .toc-columns {
+    columns: 2;
+  }
+  @media (max-width: 50rem) {
+    .toc-columns {
+      columns: 1;
+    }
+  }
+
+  .pagerow {
+    @apply flex flex-wrap;
+    gap: 2rem;
+
+    section {
+      @apply min-w-0;
+      flex: 1 1 14rem;
+    }
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  pre.mermaid {
+    @apply overflow-x-auto rounded-lg border border-[color:var(--edge)] p-4 my-4;
+    background: var(--mermaid-bg);
+
+    svg {
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+      display: block;
+    }
+  }
+  pre.mermaid[data-processed] {
+    @apply p-4;
+  }
+}
